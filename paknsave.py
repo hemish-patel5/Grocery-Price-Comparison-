@@ -49,4 +49,4 @@ print(f"{len(products)} products found")
 cheapest       = min(products, key=lambda p: p["singlePrice"]["price"])
 cheapest_name  = cheapest["name"]
 cheapest_price = cheapest["singlePrice"]["price"] / 100
-print(f"\n💰 Cheapest: {cheapest_name} — ${cheapest_price:.2f}\n")
+print(f"\n Cheapest: {cheapest_name} — ${cheapest_price:.2f}\n")
