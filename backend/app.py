@@ -3,7 +3,6 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import httpx
-from functools import lru_cache
 
 app = Flask(__name__)
 CORS(app)
@@ -13,61 +12,53 @@ STORE_ID = 9023
 API_URL = "https://www.woolworths.co.nz/api/v1/products"
 BASE_URL = "https://www.woolworths.co.nz"
 
-# ✅ Global persistent client (KEY FIX for Render timeouts)
+# ✅ Proper browser-like headers (VERY IMPORTANT)
 client = httpx.Client(
     headers={
-        "accept": "application/json",
-        "user-agent": "Mozilla/5.0",
+        "accept": "application/json, text/plain, */*",
+        "accept-language": "en-NZ,en;q=0.9",
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
         "x-requested-with": "OnlineShopping.WebApp",
-        "referer": "https://www.woolworths.co.nz/shop/searchproducts"
+        "referer": "https://www.woolworths.co.nz/shop/searchproducts",
+        "origin": "https://www.woolworths.co.nz"
     },
     timeout=10.0
 )
 
-# Track if store cookie has been set
-store_initialized = False
-
-
-def init_store(store_id: int):
-    global store_initialized
-
-    if not store_initialized:
-        try:
-            # Start session
-            client.get(BASE_URL)
-
-            # Set store cookie
-            client.cookies.set(
-                "fulfilmentStoreId",
-                str(store_id),
-                domain=".woolworths.co.nz"
-            )
-
-            store_initialized = True
-        except Exception:
-            pass
-
 
 def search_woolworths(query: str, store_id: int):
     try:
-        # Step 1: Ensure session is fresh
+        # Step 1: Start session
         client.get(BASE_URL)
 
-        # Step 2: Set store cookie AFTER session starts
+        # Step 2: Set store cookie
         client.cookies.set(
             "fulfilmentStoreId",
             str(store_id),
             domain=".woolworths.co.nz"
         )
 
-        # Step 3: Call API
+        # Step 3: API request with store header
         params = {
             "target": "search",
             "search": query,
             "size": 24
         }
 
-        res = client.get(API_URL, params=params)
+        res = client.get(
+            API_URL,
+            params=params,
+            headers={
+                "x-fulfilment-store-id": str(store_id),
+                "accept": "application/json"
+            }
+        )
+
+        # 🔍 DEBUG (check Render logs)
+        print("STATUS:", res.status_code)
+        print("URL:", res.url)
+        print("TEXT SAMPLE:", res.text[:300])
+
         data = res.json()
 
     except Exception as e:
@@ -84,7 +75,6 @@ def search_woolworths(query: str, store_id: int):
             or price_data.get("price")
         )
 
-    # 🔥 TEMP DEBUG (remove later)
     print("TOTAL PRODUCTS:", len(products))
 
     valid = [p for p in products if get_price(p) is not None]
@@ -94,11 +84,6 @@ def search_woolworths(query: str, store_id: int):
         {"name": p["name"], "price": get_price(p)}
         for p in valid
     ]
-
-# ✅ Cache results (huge speed boost)
-# @lru_cache(maxsize=100)
-def cached_search(query, store_id):
-    return tuple(search_woolworths(query, store_id))
 
 
 @app.route("/api/search")
@@ -110,7 +95,7 @@ def search():
         return jsonify([])
 
     try:
-        products = list(cached_search(query, store_id))
+        products = search_woolworths(query, store_id)
         return jsonify(products)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
