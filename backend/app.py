@@ -49,25 +49,43 @@ def init_store(store_id: int):
 
 
 def search_woolworths(query: str, store_id: int):
-    init_store(store_id)
-
-    params = {
-        "target": "search",
-        "search": query,
-        "size": 48
-    }
-
     try:
+        # Step 1: Ensure session is fresh
+        client.get(BASE_URL)
+
+        # Step 2: Set store cookie AFTER session starts
+        client.cookies.set(
+            "fulfilmentStoreId",
+            str(store_id),
+            domain=".woolworths.co.nz"
+        )
+
+        # Step 3: Call API
+        params = {
+            "target": "search",
+            "search": query,
+            "size": 24
+        }
+
         res = client.get(API_URL, params=params)
         data = res.json()
-    except Exception:
+
+    except Exception as e:
+        print("ERROR:", e)
         return []
 
     products = data.get("products", {}).get("items", [])
 
     def get_price(p):
         price_data = p.get("price", {})
-        return price_data.get("salePrice") or price_data.get("originalPrice")
+        return (
+            price_data.get("salePrice")
+            or price_data.get("originalPrice")
+            or price_data.get("price")
+        )
+
+    # 🔥 TEMP DEBUG (remove later)
+    print("TOTAL PRODUCTS:", len(products))
 
     valid = [p for p in products if get_price(p) is not None]
     valid.sort(key=get_price)
@@ -77,9 +95,8 @@ def search_woolworths(query: str, store_id: int):
         for p in valid
     ]
 
-
 # ✅ Cache results (huge speed boost)
-@lru_cache(maxsize=100)
+# @lru_cache(maxsize=100)
 def cached_search(query, store_id):
     return tuple(search_woolworths(query, store_id))
 
