@@ -15,9 +15,15 @@ const App = () => {
     }
   };
 
+  const storeColor = (store) => {
+    if (store === "PAK'nSAVE") return "text-black bg-yellow-300";
+    if (store === "New World") return "text-white bg-red-500 ";
+    return "text-white bg-green-600";
+  };
+
   return (
     <div className="font-er min-h-screen bg-blue-50 flex flex-col items-center p-8 text-gray-900">
-      <h1 className="text-5xl font-black mb-10 text-blue-900 tracking-tighter">
+      <h1 className="text-5xl font-black mb-10 text-blue-600 tracking-tighter">
         Grocery Price Comparison
       </h1>
 
@@ -35,12 +41,10 @@ const App = () => {
         {/* --- MAGNIFYING GLASS BUTTON --- */}
         <button
           onClick={handleSearch}
-          // Changed right-2 to right-3, and p-3 to p-4 for a bigger button
           className="absolute right-3 top-1/2 -translate-y-1/2 p-4 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors shadow-lg active:scale-95"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
-            // Changed h-5 w-5 to h-6 w-6 to match the larger button
             className="h-6 w-6"
             fill="none"
             viewBox="0 0 24 24"
@@ -49,7 +53,7 @@ const App = () => {
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
-              strokeWidth={3} // Slightly thicker stroke for the bigger icon
+              strokeWidth={3}
               d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
             />
           </svg>
@@ -83,11 +87,7 @@ const App = () => {
             {/* 3. Store name at the bottom */}
             <div className="mt-6 pt-4 border-t border-blue-200 w-full flex items-center justify-between">
               <span
-                className={`text-sm font-bold px-4 py-1.5 rounded-full tracking-tight ${
-                  products[0].store === "PAK'nSAVE"
-                    ? "text-black bg-yellow-300"
-                    : "text-white bg-green-600"
-                }`}
+                className={`text-sm font-bold px-4 py-1.5 rounded-full tracking-tight ${storeColor(products[0].store)}`}
               >
                 {products[0].store}
               </span>
@@ -104,11 +104,7 @@ const App = () => {
               {/* Product Name & Store Label */}
               <div className="flex flex-col items-start">
                 <span
-                  className={`text-[10px] font-black px-3 py-1 rounded-full  tracking-widest mb-2 shadow-sm ${
-                    p.store === "PAK'nSAVE"
-                      ? "text-black bg-yellow-300"
-                      : "text-white bg-green-600"
-                  }`}
+                  className={`text-[10px] font-black px-3 py-1 rounded-full  tracking-widest mb-2 shadow-sm ${storeColor(p.store)}`}
                 >
                   {p.store}
                 </span>

@@ -7,8 +7,7 @@ app = Flask(__name__)
 CORS(app)
 
 WOOLWORTHS_STORE_ID = 9023
-PAKNSAVE_STORE_ID   = "e1925ea7-01bc-4358-ae7c-c6502da5ab12"
-NEWWORLD_STORE_ID   = "7508cf88-9fd0-4e71-b2f2-d564b1decf8d"
+PAKNSAVE_STORE_ID = "e1925ea7-01bc-4358-ae7c-c6502da5ab12"
 
 def search_woolworths(query):
     try:
@@ -24,7 +23,7 @@ def search_woolworths(query):
             client.get("https://www.woolworths.co.nz")
             client.cookies.set("fulfilmentStoreId", str(WOOLWORTHS_STORE_ID), domain=".woolworths.co.nz")
             res = client.get("https://www.woolworths.co.nz/api/v1/products", params={
-                "target": "search", "search": query, "size": 24
+                "target": "search", "search": query, "size": 48
             })
             products = res.json().get("products", {}).get("items", [])
 
@@ -40,11 +39,10 @@ def search_woolworths(query):
         print(f"Woolworths error: {e}")
         return []
 
-
 def search_paknsave(query):
     try:
         with httpx.Client(
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"},
+            headers={"User-Agent": "Mozilla/5.0"},
             timeout=15.0
         ) as client:
             token_res = client.post("https://www.paknsave.co.nz/api/user/get-current-user")
@@ -83,50 +81,6 @@ def search_paknsave(query):
         print(f"PAK'nSAVE error: {e}")
         return []
 
-
-def search_newworld(query):
-    try:
-        with httpx.Client(
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"},
-            timeout=15.0
-        ) as client:
-            token_res = client.post("https://www.newworld.co.nz/api/user/get-current-user")
-            token_res.raise_for_status()
-            token = token_res.json().get("access_token")
-
-            search_res = client.post(
-                "https://api-prod.newworld.co.nz/v1/edge/search/paginated/products",
-                json={
-                    "storeId": NEWWORLD_STORE_ID,
-                    "hitsPerPage": 48,
-                    "page": 0,
-                    "sortOrder": "NI_POPULARITY_ASC",
-                    "algoliaFacetQueries": [],
-                    "algoliaQuery": {
-                        "query": query,
-                        "hitsPerPage": 48,
-                        "page": 0,
-                        "filters": f"stores:{NEWWORLD_STORE_ID}",
-                        "attributesToHighlight": [],
-                    },
-                },
-                headers={"authorization": f"Bearer {token}"}
-            )
-            search_res.raise_for_status()
-
-            return [
-                {
-                    "name": p.get("name", "Unknown"),
-                    "price": f"{p.get('singlePrice', {}).get('price', 0) / 100:.2f}",
-                    "store": "New World"
-                }
-                for p in search_res.json().get("products", [])
-            ]
-    except Exception as e:
-        print(f"New World error: {e}")
-        return []
-
-
 @app.route("/api/search")
 def search():
     query = request.args.get("q", "").strip()
@@ -135,17 +89,11 @@ def search():
 
     with ThreadPoolExecutor() as executor:
         woolworths_future = executor.submit(search_woolworths, query)
-        paknsave_future   = executor.submit(search_paknsave, query)
-        newworld_future   = executor.submit(search_newworld, query)
-        results = (
-            woolworths_future.result() +
-            paknsave_future.result() +
-            newworld_future.result()
-        )
+        paknsave_future = executor.submit(search_paknsave, query)
+        results = woolworths_future.result() + paknsave_future.result()
 
     results.sort(key=lambda x: float(x["price"]))
     return jsonify(results)
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", debug=True)
