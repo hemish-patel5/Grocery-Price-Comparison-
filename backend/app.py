@@ -4,7 +4,7 @@ import httpx
 from concurrent.futures import ThreadPoolExecutor
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins="*")
 
 WOOLWORTHS_STORE_ID = 9023
 PAKNSAVE_STORE_ID   = "e1925ea7-01bc-4358-ae7c-c6502da5ab12"
