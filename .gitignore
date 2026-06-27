@@ -5,6 +5,8 @@ frontend/dist/
 frontend/dist-ssr/
 frontend/.local
 *.local
+frontend/.env
+
 
 # --- Backend (Flask/Python) ---
 backend/__pycache__/
