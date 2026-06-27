@@ -1,13 +1,15 @@
 /* pip install flask flask-cors httpx */
 import { useState } from "react";
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+
 const App = () => {
   const [query, setQuery] = useState("");
   const [products, setProducts] = useState([]);
 
   const handleSearch = async () => {
     try {
-      const res = await fetch(`http://localhost:5000/api/search?q=${query}`);
+      const res = await fetch(`${API_BASE_URL}/api/search?q=${encodeURIComponent(query)}`);
       const data = await res.json();
       setProducts(Array.isArray(data) ? data : []);
     } catch (error) {
