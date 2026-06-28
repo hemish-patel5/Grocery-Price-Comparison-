@@ -184,6 +184,8 @@ def search_woolworths(query):
                     "search": query,
                     "size": WOOLWORTHS_PAGE_SIZE,
                     "page": page,
+                    "inStockProductsOnly": "false",
+                    "sort": "Relevance",
                 })
                 res.raise_for_status()
 
