@@ -204,7 +204,13 @@ def search_woolworths(query, store_id=WOOLWORTHS_STORE_ID, address=WOOLWORTHS_DE
                 })
                 res.raise_for_status()
 
-                page_products = res.json().get("products", {}).get("items", [])
+                products_response = res.json().get("products", {})
+                total_items = products_response.get("totalItems")
+                page_items = products_response.get("items", [])
+                page_products = [
+                    item for item in page_items
+                    if item.get("type") == "Product"
+                ]
                 if not page_products:
                     break
 
@@ -227,7 +233,17 @@ def search_woolworths(query, store_id=WOOLWORTHS_STORE_ID, address=WOOLWORTHS_DE
                     break
 
                 raw_products.extend(new_products)
-                print(f"Woolworths page {page}: raw={len(page_products)}, new={len(new_products)}, total={len(raw_products)}")
+                print(
+                    f"Woolworths page {page}: "
+                    f"raw={len(page_items)}, "
+                    f"products={len(page_products)}, "
+                    f"new={len(new_products)}, "
+                    f"total={len(raw_products)}, "
+                    f"expected={total_items}"
+                )
+
+                if total_items is not None and len(raw_products) >= total_items:
+                    break
 
                 page += 1
 
