@@ -536,35 +536,6 @@ def search():
     return jsonify(results)
 
 
-@app.route("/api/debug/search")
-def debug_search():
-    query = request.args.get("q", "").strip()
-    if not query:
-        return jsonify({"error": "Missing q query parameter"}), 400
-
-    woolworths_store_id = request.args.get("woolworths_store_id")
-    woolworths_address = request.args.get("woolworths_address", WOOLWORTHS_DEFAULT_ADDRESS).strip()
-
-    with ThreadPoolExecutor() as executor:
-        futures = {
-            "woolworths": executor.submit(search_woolworths, query, woolworths_store_id, woolworths_address),
-            "paknsave": executor.submit(search_paknsave, query),
-            "newworld": executor.submit(search_newworld, query),
-        }
-
-        supermarkets = {
-            store: future.result()
-            for store, future in futures.items()
-        }
-
-    return jsonify({
-        "query": query,
-        "counts": {
-            store: len(products)
-            for store, products in supermarkets.items()
-        },
-        "results": supermarkets,
-    })
 
 
 if __name__ == "__main__":
