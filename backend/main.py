@@ -24,7 +24,7 @@ WOOLWORTHS_STORES = {
         "areaId": 893,
         "fulfilmentStoreId": 9532,
         "pickupAddressId": 2770176,
-        "locationCookie": "dm-Pickup,f-9532,a-893,s-10626",
+        "locationCookie": "dm-Pickup,f-9532,a-893,s-2770176",
     },
 }
 WOOLWORTHS_DEFAULT_STORE_KEY = "botany"
