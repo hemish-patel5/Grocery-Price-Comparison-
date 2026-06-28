@@ -185,7 +185,7 @@ def search_woolworths(query):
                     "size": WOOLWORTHS_PAGE_SIZE,
                     "page": page,
                     "inStockProductsOnly": "false",
-                    "sort": "Relevance",
+                    "sort": "PriceAsc",
                 })
                 res.raise_for_status()
 
@@ -495,6 +495,8 @@ def search():
         results = []
         for future in futures:
             results.extend(future.result())
+
+    print(f"Total products found: {len(results)}")
 
     results.sort(key=lambda x: float(x["price"]))
     return jsonify(results)
