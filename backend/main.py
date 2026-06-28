@@ -11,8 +11,23 @@ CORS(app)
 PAKNSAVE_STORE_ID   = "e1925ea7-01bc-4358-ae7c-c6502da5ab12"
 NEWWORLD_STORE_ID   = "7508cf88-9fd0-4e71-b2f2-d564b1decf8d"
 
-WOOLWORTHS_STORE_ID = 9109
-WOOLWORTHS_DEFAULT_ADDRESS = "Woolworths Botany"
+WOOLWORTHS_STORES = {
+    "botany": {
+        "address": "Woolworths Botany",
+        "areaId": 473,
+        "fulfilmentStoreId": 9109,
+        "pickupAddressId": 1225547,
+    },
+    "carlyle": {
+        "address": "Woolworths Carlyle",
+        "areaId": 893,
+        "fulfilmentStoreId": 9532,
+        "pickupAddressId": 2770176,
+    },
+}
+WOOLWORTHS_DEFAULT_STORE_KEY = "botany"
+WOOLWORTHS_STORE_ID = WOOLWORTHS_STORES[WOOLWORTHS_DEFAULT_STORE_KEY]["fulfilmentStoreId"]
+WOOLWORTHS_DEFAULT_ADDRESS = WOOLWORTHS_STORES[WOOLWORTHS_DEFAULT_STORE_KEY]["address"]
 PAGES_TO_FETCH = 9
 FOODSTUFFS_HITS_PER_PAGE = 48
 WOOLWORTHS_PAGE_SIZE = 48
@@ -155,6 +170,22 @@ def parse_store_id(value, default_store_id):
         return default_store_id
 
 
+def get_woolworths_store_from_request():
+    store_key = request.args.get("woolworths_store", WOOLWORTHS_DEFAULT_STORE_KEY).strip().lower()
+    store = dict(WOOLWORTHS_STORES.get(store_key, WOOLWORTHS_STORES[WOOLWORTHS_DEFAULT_STORE_KEY]))
+
+    custom_store_id = request.args.get("woolworths_store_id")
+    custom_address = request.args.get("woolworths_address")
+
+    if custom_store_id:
+        store["fulfilmentStoreId"] = parse_store_id(custom_store_id, store["fulfilmentStoreId"])
+
+    if custom_address:
+        store["address"] = custom_address.strip()
+
+    return store
+
+
 def dedupe_products(products):
     seen = set()
     deduped = []
@@ -174,9 +205,11 @@ def dedupe_products(products):
     return deduped
 
 
-def search_woolworths(query, store_id=WOOLWORTHS_STORE_ID, address=WOOLWORTHS_DEFAULT_ADDRESS):
+def search_woolworths(query, store=None):
     try:
-        store_id = parse_store_id(store_id, WOOLWORTHS_STORE_ID)
+        store = store or WOOLWORTHS_STORES[WOOLWORTHS_DEFAULT_STORE_KEY]
+        store_id = parse_store_id(store.get("fulfilmentStoreId"), WOOLWORTHS_STORE_ID)
+        address = store.get("address", WOOLWORTHS_DEFAULT_ADDRESS)
 
         with httpx.Client(
             headers={
@@ -297,6 +330,8 @@ def search_woolworths(query, store_id=WOOLWORTHS_STORE_ID, address=WOOLWORTHS_DE
                     "is_on_special": bool(price.get("isSpecial")),
                     "source_store_id": str(store_id),
                     "source_store_address": address,
+                    "source_store_area_id": store.get("areaId"),
+                    "source_pickup_address_id": store.get("pickupAddressId"),
                     "barcode": p.get("barcode"),
                     "variety": p.get("variety"),
                     "unit": p.get("unit"),
@@ -516,12 +551,11 @@ def search():
     if not query:
         return jsonify([])
 
-    woolworths_store_id = request.args.get("woolworths_store_id")
-    woolworths_address = request.args.get("woolworths_address", WOOLWORTHS_DEFAULT_ADDRESS).strip()
+    woolworths_store = get_woolworths_store_from_request()
 
     with ThreadPoolExecutor() as executor:
         futures = [
-            executor.submit(search_woolworths, query, woolworths_store_id, woolworths_address),
+            executor.submit(search_woolworths, query, woolworths_store),
             #executor.submit(search_paknsave, query),
             #executor.submit(search_newworld, query),
         ]
@@ -534,6 +568,7 @@ def search():
 
     results.sort(key=lambda x: float(x["price"]))
     return jsonify(results)
+
 
 
 
