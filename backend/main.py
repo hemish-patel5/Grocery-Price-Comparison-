@@ -17,12 +17,14 @@ WOOLWORTHS_STORES = {
         "areaId": 473,
         "fulfilmentStoreId": 9109,
         "pickupAddressId": 1225547,
+        "locationCookie": "dm-Pickup,f-9109,a-473,s-1225547",
     },
     "carlyle": {
         "address": "Woolworths Carlyle",
         "areaId": 893,
         "fulfilmentStoreId": 9532,
         "pickupAddressId": 2770176,
+        "locationCookie": "dm-Pickup,f-9532,a-893,s-10626",
     },
 }
 WOOLWORTHS_DEFAULT_STORE_KEY = "botany"
@@ -186,6 +188,18 @@ def get_woolworths_store_from_request():
     return store
 
 
+def woolworths_location_cookie(store):
+    if store.get("locationCookie"):
+        return store["locationCookie"]
+
+    return (
+        f"dm-Pickup,"
+        f"f-{store.get('fulfilmentStoreId')},"
+        f"a-{store.get('areaId')},"
+        f"s-{store.get('pickupAddressId')}"
+    )
+
+
 def dedupe_products(products):
     seen = set()
     deduped = []
@@ -222,6 +236,7 @@ def search_woolworths(query, store=None):
         ) as client:
             client.get("https://www.woolworths.co.nz")
             client.cookies.set("fulfilmentStoreId", str(store_id), domain=".woolworths.co.nz")
+            client.cookies.set("cw-lrkswrdjp", woolworths_location_cookie(store), domain=".woolworths.co.nz")
             raw_products = []
             seen_product_keys = set()
             page = 1
