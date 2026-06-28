@@ -10,6 +10,10 @@ CORS(app)
 WOOLWORTHS_STORE_ID = 9023
 PAKNSAVE_STORE_ID   = "e1925ea7-01bc-4358-ae7c-c6502da5ab12"
 NEWWORLD_STORE_ID   = "7508cf88-9fd0-4e71-b2f2-d564b1decf8d"
+PAGES_TO_FETCH = 9
+FOODSTUFFS_HITS_PER_PAGE = 48
+WOOLWORTHS_PAGE_SIZE = 48
+WOOLWORTHS_MAX_PAGES = 100
 
 
 def get_path(data, path):
@@ -138,6 +142,25 @@ def format_unit_price(price, measure):
     return f"{formatted_price} / {measure}"
 
 
+def dedupe_products(products):
+    seen = set()
+    deduped = []
+
+    for product in products:
+        key = (
+            product.get("store"),
+            product.get("product_id") or product.get("barcode") or product.get("name"),
+        )
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+        deduped.append(product)
+
+    return deduped
+
+
 def search_woolworths(query):
     try:
         with httpx.Client(
@@ -151,10 +174,47 @@ def search_woolworths(query):
         ) as client:
             client.get("https://www.woolworths.co.nz")
             client.cookies.set("fulfilmentStoreId", str(WOOLWORTHS_STORE_ID), domain=".woolworths.co.nz")
-            res = client.get("https://www.woolworths.co.nz/api/v1/products", params={
-                "target": "search", "search": query, "size": 24
-            })
-            products = res.json().get("products", {}).get("items", [])
+            raw_products = []
+            seen_product_keys = set()
+            page = 1
+
+            while page <= WOOLWORTHS_MAX_PAGES:
+                res = client.get("https://www.woolworths.co.nz/api/v1/products", params={
+                    "target": "search",
+                    "search": query,
+                    "size": WOOLWORTHS_PAGE_SIZE,
+                    "page": page,
+                })
+                res.raise_for_status()
+
+                page_products = res.json().get("products", {}).get("items", [])
+                if not page_products:
+                    break
+
+                new_products = []
+                for product in page_products:
+                    product_key = (
+                        product.get("sku")
+                        or product.get("barcode")
+                        or product.get("slug")
+                        or product.get("name")
+                    )
+
+                    if product_key in seen_product_keys:
+                        continue
+
+                    seen_product_keys.add(product_key)
+                    new_products.append(product)
+
+                if not new_products:
+                    break
+
+                raw_products.extend(new_products)
+
+                if len(page_products) < WOOLWORTHS_PAGE_SIZE:
+                    break
+
+                page += 1
 
             def get_price(p):
                 price = p.get("price", {})
@@ -215,10 +275,11 @@ def search_woolworths(query):
                     "stock_level": p.get("stockLevel"),
                 }
 
-            return [
+            normalized_products = [
                 normalize_product(p)
-                for p in products if get_price(p) is not None
+                for p in raw_products if get_price(p) is not None
             ]
+            return dedupe_products(normalized_products)
     except Exception as e:
         print(f"Woolworths error: {e}")
         return []
@@ -234,25 +295,34 @@ def search_paknsave(query):
             token_res.raise_for_status()
             token = token_res.json().get("access_token")
 
-            search_res = client.post(
-                "https://api-prod.paknsave.co.nz/v1/edge/search/paginated/products",
-                json={
-                    "storeId": PAKNSAVE_STORE_ID,
-                    "hitsPerPage": 48,
-                    "page": 0,
-                    "sortOrder": "NI_POPULARITY_ASC",
-                    "algoliaFacetQueries": [],
-                    "algoliaQuery": {
-                        "query": query,
-                        "hitsPerPage": 48,
-                        "page": 0,
-                        "filters": f"stores:{PAKNSAVE_STORE_ID}",
-                        "attributesToHighlight": [],
+            raw_products = []
+
+            for page in range(PAGES_TO_FETCH):
+                search_res = client.post(
+                    "https://api-prod.paknsave.co.nz/v1/edge/search/paginated/products",
+                    json={
+                        "storeId": PAKNSAVE_STORE_ID,
+                        "hitsPerPage": FOODSTUFFS_HITS_PER_PAGE,
+                        "page": page,
+                        "sortOrder": "NI_POPULARITY_ASC",
+                        "algoliaFacetQueries": [],
+                        "algoliaQuery": {
+                            "query": query,
+                            "hitsPerPage": FOODSTUFFS_HITS_PER_PAGE,
+                            "page": page,
+                            "filters": f"stores:{PAKNSAVE_STORE_ID}",
+                            "attributesToHighlight": [],
+                        },
                     },
-                },
-                headers={"authorization": f"Bearer {token}"}
-            )
-            search_res.raise_for_status()
+                    headers={"authorization": f"Bearer {token}"}
+                )
+                search_res.raise_for_status()
+
+                page_products = search_res.json().get("products", [])
+                if not page_products:
+                    break
+
+                raw_products.extend(page_products)
 
             def normalize_product(p):
                 single_price = p.get("singlePrice", {})
@@ -304,7 +374,7 @@ def search_paknsave(query):
 
             return [
                 normalize_product(p)
-                for p in search_res.json().get("products", [])
+                for p in dedupe_products(raw_products)
             ]
     except Exception as e:
         print(f"PAK'nSAVE error: {e}")
@@ -321,25 +391,34 @@ def search_newworld(query):
             token_res.raise_for_status()
             token = token_res.json().get("access_token")
 
-            search_res = client.post(
-                "https://api-prod.newworld.co.nz/v1/edge/search/paginated/products",
-                json={
-                    "storeId": NEWWORLD_STORE_ID,
-                    "hitsPerPage": 48,
-                    "page": 0,
-                    "sortOrder": "NI_POPULARITY_ASC",
-                    "algoliaFacetQueries": [],
-                    "algoliaQuery": {
-                        "query": query,
-                        "hitsPerPage": 48,
-                        "page": 0,
-                        "filters": f"stores:{NEWWORLD_STORE_ID}",
-                        "attributesToHighlight": [],
+            raw_products = []
+
+            for page in range(PAGES_TO_FETCH):
+                search_res = client.post(
+                    "https://api-prod.newworld.co.nz/v1/edge/search/paginated/products",
+                    json={
+                        "storeId": NEWWORLD_STORE_ID,
+                        "hitsPerPage": FOODSTUFFS_HITS_PER_PAGE,
+                        "page": page,
+                        "sortOrder": "NI_POPULARITY_ASC",
+                        "algoliaFacetQueries": [],
+                        "algoliaQuery": {
+                            "query": query,
+                            "hitsPerPage": FOODSTUFFS_HITS_PER_PAGE,
+                            "page": page,
+                            "filters": f"stores:{NEWWORLD_STORE_ID}",
+                            "attributesToHighlight": [],
+                        },
                     },
-                },
-                headers={"authorization": f"Bearer {token}"}
-            )
-            search_res.raise_for_status()
+                    headers={"authorization": f"Bearer {token}"}
+                )
+                search_res.raise_for_status()
+
+                page_products = search_res.json().get("products", [])
+                if not page_products:
+                    break
+
+                raw_products.extend(page_products)
 
             def normalize_product(p):
                 single_price = p.get("singlePrice", {})
@@ -391,7 +470,7 @@ def search_newworld(query):
 
             return [
                 normalize_product(p)
-                for p in search_res.json().get("products", [])
+                for p in dedupe_products(raw_products)
             ]
     except Exception as e:
         print(f"New World error: {e}")
