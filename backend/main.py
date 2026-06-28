@@ -215,11 +215,76 @@ def dedupe_products(products):
     return deduped
 
 
-def search_woolworths(query, store=None):
+def get_woolworths_price(product):
+    price = product.get("price", {})
+    return price.get("salePrice") or price.get("originalPrice")
+
+
+def normalize_woolworths_product(product, store, store_id, address):
+    price = product.get("price", {})
+    size = product.get("size", {})
+    product_id = first_value(product, [
+        ("sku",),
+        ("productId",),
+        ("productID",),
+        ("stockcode",),
+        ("id",),
+        ("barcode",),
+    ])
+    product_path = first_value(product, [
+        ("url",),
+        ("productUrl",),
+        ("productURL",),
+        ("slug",),
+    ])
+
+    return {
+        "name": product.get("name", "Unknown"),
+        "price": format_price(get_woolworths_price(product)),
+        "original_price": format_price(price.get("originalPrice")),
+        "sale_price": format_price(price.get("salePrice")),
+        "save_price": format_price(price.get("savePrice")),
+        "store": "Woolworths",
+        "product_id": product_id,
+        "brand": first_value(product, [
+            ("brand",),
+            ("brandName",),
+            ("manufacturer",),
+        ]),
+        "size": first_value(product, [
+            ("size", "volumeSize"),
+            ("size", "cupMeasure"),
+            ("packageSize",),
+            ("unit",),
+        ]),
+        "unit_price": format_unit_price(
+            size.get("cupPrice"),
+            size.get("cupMeasure"),
+        ),
+        "image_url": get_path(product, ("images", "big")),
+        "product_url": woolworths_product_url(product_id, product_path),
+        "is_on_special": bool(price.get("isSpecial")),
+        "source_store_id": str(store_id),
+        "source_store_address": address,
+        "source_store_area_id": store.get("areaId"),
+        "source_pickup_address_id": store.get("pickupAddressId"),
+        "barcode": product.get("barcode"),
+        "variety": product.get("variety"),
+        "unit": product.get("unit"),
+        "department": first_value(product, [
+            ("departments", 0, "name"),
+        ]),
+        "availability": product.get("availabilityStatus"),
+        "stock_level": product.get("stockLevel"),
+    }
+
+
+def fetch_woolworths_products(params, store=None, log_label="Woolworths"):
     try:
         store = store or WOOLWORTHS_STORES[WOOLWORTHS_DEFAULT_STORE_KEY]
         store_id = parse_store_id(store.get("fulfilmentStoreId"), WOOLWORTHS_STORE_ID)
         address = store.get("address", WOOLWORTHS_DEFAULT_ADDRESS)
+        base_params = list(params.items()) if isinstance(params, dict) else list(params)
 
         with httpx.Client(
             headers={
@@ -238,14 +303,15 @@ def search_woolworths(query, store=None):
             page = 1
 
             while page <= WOOLWORTHS_MAX_PAGES:
-                res = client.get("https://www.woolworths.co.nz/api/v1/products", params={
-                    "target": "search",
-                    "search": query,
-                    "size": WOOLWORTHS_PAGE_SIZE,
-                    "page": page,
-                    "inStockProductsOnly": "false",
-                    "sort": "PriceAsc",
-                })
+                page_params = base_params + [
+                    ("size", WOOLWORTHS_PAGE_SIZE),
+                    ("page", page),
+                    ("inStockProductsOnly", "false"),
+                ]
+                res = client.get(
+                    "https://www.woolworths.co.nz/api/v1/products",
+                    params=page_params,
+                )
                 res.raise_for_status()
 
                 products_response = res.json().get("products", {})
@@ -278,7 +344,7 @@ def search_woolworths(query, store=None):
 
                 raw_products.extend(new_products)
                 print(
-                    f"Woolworths page {page}: "
+                    f"{log_label} page {page}: "
                     f"raw={len(page_items)}, "
                     f"products={len(page_products)}, "
                     f"new={len(new_products)}, "
@@ -291,76 +357,55 @@ def search_woolworths(query, store=None):
 
                 page += 1
 
-            def get_price(p):
-                price = p.get("price", {})
-                return price.get("salePrice") or price.get("originalPrice")
-
-            def normalize_product(p):
-                price = p.get("price", {})
-                size = p.get("size", {})
-                product_id = first_value(p, [
-                    ("sku",),
-                    ("productId",),
-                    ("productID",),
-                    ("stockcode",),
-                    ("id",),
-                    ("barcode",),
-                ])
-                product_path = first_value(p, [
-                    ("url",),
-                    ("productUrl",),
-                    ("productURL",),
-                    ("slug",),
-                ])
-
-                return {
-                    "name": p.get("name", "Unknown"),
-                    "price": format_price(get_price(p)),
-                    "original_price": format_price(price.get("originalPrice")),
-                    "sale_price": format_price(price.get("salePrice")),
-                    "save_price": format_price(price.get("savePrice")),
-                    "store": "Woolworths",
-                    "product_id": product_id,
-                    "brand": first_value(p, [
-                        ("brand",),
-                        ("brandName",),
-                        ("manufacturer",),
-                    ]),
-                    "size": first_value(p, [
-                        ("size", "volumeSize"),
-                        ("size", "cupMeasure"),
-                        ("packageSize",),
-                        ("unit",),
-                    ]),
-                    "unit_price": format_unit_price(
-                        size.get("cupPrice"),
-                        size.get("cupMeasure"),
-                    ),
-                    "image_url": get_path(p, ("images", "big")),
-                    "product_url": woolworths_product_url(product_id, product_path),
-                    "is_on_special": bool(price.get("isSpecial")),
-                    "source_store_id": str(store_id),
-                    "source_store_address": address,
-                    "source_store_area_id": store.get("areaId"),
-                    "source_pickup_address_id": store.get("pickupAddressId"),
-                    "barcode": p.get("barcode"),
-                    "variety": p.get("variety"),
-                    "unit": p.get("unit"),
-                    "department": first_value(p, [
-                        ("departments", 0, "name"),
-                    ]),
-                    "availability": p.get("availabilityStatus"),
-                    "stock_level": p.get("stockLevel"),
-                }
-
             normalized_products = [
-                normalize_product(p)
-                for p in raw_products if get_price(p) is not None
+                normalize_woolworths_product(p, store, store_id, address)
+                for p in raw_products if get_woolworths_price(p) is not None
             ]
             return dedupe_products(normalized_products)
     except Exception as e:
         print(f"Woolworths error: {e}")
         return []
+
+
+def search_woolworths(query, store=None):
+    return fetch_woolworths_products(
+        params=[
+            ("target", "search"),
+            ("search", query),
+            ("sort", "PriceAsc"),
+        ],
+        store=store,
+        log_label="Woolworths",
+    )
+
+
+def search_woolworths_category(category, store=None):
+    params = [
+        ("target", "browse"),
+        ("search", ""),
+        ("sort", "BrowseRelevance"),
+    ]
+    for das_filter in category.get("dasFilters", []):
+        params.append(("dasFilter", das_filter))
+
+    products = fetch_woolworths_products(
+        params=params,
+        store=store,
+        log_label=f"Woolworths {category.get('label', category.get('key'))}",
+    )
+
+    for product in products:
+        product["category_key"] = category.get("key")
+        product["category_label"] = category.get("label")
+        product["category_level"] = category.get("level")
+        product["department_id"] = category.get("department_id")
+        product["department_name"] = category.get("department_name")
+        product["aisle_id"] = category.get("aisle_id")
+        product["aisle_name"] = category.get("aisle_name")
+        product["shelf_id"] = category.get("shelf_id")
+        product["shelf_name"] = category.get("shelf_name")
+
+    return products
     
 
 
