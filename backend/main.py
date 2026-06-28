@@ -7,9 +7,12 @@ from urllib.parse import urljoin
 app = Flask(__name__)
 CORS(app)
 
-WOOLWORTHS_STORE_ID = 9023
+
 PAKNSAVE_STORE_ID   = "e1925ea7-01bc-4358-ae7c-c6502da5ab12"
 NEWWORLD_STORE_ID   = "7508cf88-9fd0-4e71-b2f2-d564b1decf8d"
+
+WOOLWORTHS_STORE_ID = 9109
+WOOLWORTHS_DEFAULT_ADDRESS = "Woolworths Botany"
 PAGES_TO_FETCH = 9
 FOODSTUFFS_HITS_PER_PAGE = 48
 WOOLWORTHS_PAGE_SIZE = 48
@@ -142,6 +145,16 @@ def format_unit_price(price, measure):
     return f"{formatted_price} / {measure}"
 
 
+def parse_store_id(value, default_store_id):
+    if value in (None, ""):
+        return default_store_id
+
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default_store_id
+
+
 def dedupe_products(products):
     seen = set()
     deduped = []
@@ -161,8 +174,10 @@ def dedupe_products(products):
     return deduped
 
 
-def search_woolworths(query):
+def search_woolworths(query, store_id=WOOLWORTHS_STORE_ID, address=WOOLWORTHS_DEFAULT_ADDRESS):
     try:
+        store_id = parse_store_id(store_id, WOOLWORTHS_STORE_ID)
+
         with httpx.Client(
             headers={
                 "accept": "application/json",
@@ -173,7 +188,7 @@ def search_woolworths(query):
             timeout=10.0
         ) as client:
             client.get("https://www.woolworths.co.nz")
-            client.cookies.set("fulfilmentStoreId", str(WOOLWORTHS_STORE_ID), domain=".woolworths.co.nz")
+            client.cookies.set("fulfilmentStoreId", str(store_id), domain=".woolworths.co.nz")
             raw_products = []
             seen_product_keys = set()
             page = 1
@@ -264,7 +279,8 @@ def search_woolworths(query):
                     "image_url": get_path(p, ("images", "big")),
                     "product_url": woolworths_product_url(product_id, product_path),
                     "is_on_special": bool(price.get("isSpecial")),
-                    "source_store_id": str(WOOLWORTHS_STORE_ID),
+                    "source_store_id": str(store_id),
+                    "source_store_address": address,
                     "barcode": p.get("barcode"),
                     "variety": p.get("variety"),
                     "unit": p.get("unit"),
@@ -484,9 +500,12 @@ def search():
     if not query:
         return jsonify([])
 
+    woolworths_store_id = request.args.get("woolworths_store_id")
+    woolworths_address = request.args.get("woolworths_address", WOOLWORTHS_DEFAULT_ADDRESS).strip()
+
     with ThreadPoolExecutor() as executor:
         futures = [
-            executor.submit(search_woolworths, query),
+            executor.submit(search_woolworths, query, woolworths_store_id, woolworths_address),
             #executor.submit(search_paknsave, query),
             #executor.submit(search_newworld, query),
         ]
@@ -507,9 +526,12 @@ def debug_search():
     if not query:
         return jsonify({"error": "Missing q query parameter"}), 400
 
+    woolworths_store_id = request.args.get("woolworths_store_id")
+    woolworths_address = request.args.get("woolworths_address", WOOLWORTHS_DEFAULT_ADDRESS).strip()
+
     with ThreadPoolExecutor() as executor:
         futures = {
-            "woolworths": executor.submit(search_woolworths, query),
+            "woolworths": executor.submit(search_woolworths, query, woolworths_store_id, woolworths_address),
             "paknsave": executor.submit(search_paknsave, query),
             "newworld": executor.submit(search_newworld, query),
         }
