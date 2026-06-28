@@ -212,9 +212,7 @@ def search_woolworths(query):
                     break
 
                 raw_products.extend(new_products)
-
-                if len(page_products) < WOOLWORTHS_PAGE_SIZE:
-                    break
+                print(f"Woolworths page {page}: raw={len(page_products)}, new={len(new_products)}, total={len(raw_products)}")
 
                 page += 1
 
@@ -285,6 +283,7 @@ def search_woolworths(query):
     except Exception as e:
         print(f"Woolworths error: {e}")
         return []
+    
 
 
 def search_paknsave(query):
