@@ -26,7 +26,7 @@ WOOLWORTHS_DEFAULT_ADDRESS = "Woolworths Botany"
 WOOLWORTHS_PAGE_SIZE = 48
 WOOLWORTHS_MAX_PAGES = 250
 
-# Used if the department list can't be fetched from the shell API.
+
 WOOLWORTHS_DEPARTMENTS_FALLBACK = [
     ("fruit-veg", "Fruit & Veg"),
     ("meat-poultry", "Meat & Poultry"),
