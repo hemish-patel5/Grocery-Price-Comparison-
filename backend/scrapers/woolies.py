@@ -19,6 +19,74 @@ WOOLWORTHS_DEFAULT_ADDRESS = "Woolworths Botany"
 WOOLWORTHS_PAGE_SIZE = 48
 WOOLWORTHS_MAX_PAGES = 250
 
+# Every Woolworths store in the Auckland region, sourced from the
+# /api/v1/addresses/pickup-addresses endpoint. store_id is the pickup-address
+# id Woolworths uses for each store.
+WOOLWORTHS_AUCKLAND_STORES = [
+    # Auckland (Central)
+    {"store_id": 1906035, "default_address": "Woolworths Auckland Quay Street"},
+    {"store_id": 882226, "default_address": "Woolworths Auckland Victoria Street West"},
+    {"store_id": 577581, "default_address": "Woolworths Greenlane"},
+    {"store_id": 1906063, "default_address": "Woolworths Grey Lynn"},
+    {"store_id": 1906076, "default_address": "Woolworths Mt Eden"},
+    {"store_id": 1906079, "default_address": "Woolworths Mt Roskill"},
+    {"store_id": 1239981, "default_address": "Woolworths Mt Wellington"},
+    {"store_id": 1768531, "default_address": "Woolworths Newmarket"},
+    {"store_id": 1225560, "default_address": "Woolworths Onehunga"},
+    {"store_id": 1996677, "default_address": "Woolworths Ponsonby"},
+    {"store_id": 1906087, "default_address": "Woolworths St Johns"},
+    {"store_id": 1225566, "default_address": "Woolworths St Lukes"},
+    {"store_id": 1740953, "default_address": "Woolworths Three Kings"},
+    {"store_id": 4156860, "default_address": "Woolworths Waiheke"},
+    # Auckland (East)
+    {"store_id": 1109324, "default_address": "Woolworths Beachlands"},
+    {"store_id": 1225547, "default_address": "Woolworths Botany"},
+    {"store_id": 1224920, "default_address": "Woolworths Highland Park"},
+    {"store_id": 1237277, "default_address": "Woolworths Howick"},
+    {"store_id": 1237264, "default_address": "Woolworths Meadowbank"},
+    {"store_id": 1906069, "default_address": "Woolworths Meadowlands"},
+    {"store_id": 1488544, "default_address": "Woolworths Pakuranga"},
+    # Auckland (North)
+    {"store_id": 2124460, "default_address": "Woolworths Birkenhead"},
+    {"store_id": 2683184, "default_address": "Woolworths Browns Bay"},
+    {"store_id": 1190273, "default_address": "Woolworths Glenfield"},
+    {"store_id": 3105636, "default_address": "Woolworths Greville Road"},
+    {"store_id": 2373714, "default_address": "Woolworths Mairangi Bay"},
+    {"store_id": 473644, "default_address": "Woolworths Milford"},
+    {"store_id": 2124747, "default_address": "Woolworths Northcote"},
+    {"store_id": 1225662, "default_address": "Woolworths Orewa"},
+    {"store_id": 2673963, "default_address": "Woolworths Silverdale"},
+    {"store_id": 1231998, "default_address": "Woolworths Sunnynook"},
+    {"store_id": 1229219, "default_address": "Woolworths Takapuna"},
+    {"store_id": 1716255, "default_address": "Woolworths Warkworth"},
+    {"store_id": 1248095, "default_address": "Woolworths Whangaparaoa"},
+    # Auckland (South)
+    {"store_id": 1189112, "default_address": "Woolworths Auckland Airport"},
+    {"store_id": 1600626, "default_address": "Woolworths Mangere East"},
+    {"store_id": 1225677, "default_address": "Woolworths Manukau"},
+    {"store_id": 1906072, "default_address": "Woolworths Manukau Mall"},
+    {"store_id": 1906083, "default_address": "Woolworths Manurewa"},
+    {"store_id": 1224936, "default_address": "Woolworths Papakura"},
+    {"store_id": 1225052, "default_address": "Woolworths Papatoetoe"},
+    {"store_id": 2686431, "default_address": "Woolworths Pukekohe"},
+    {"store_id": 1213289, "default_address": "Woolworths Pukekohe South"},
+    {"store_id": 2313141, "default_address": "Woolworths Roselands"},
+    {"store_id": 480066, "default_address": "Woolworths Takanini"},
+    {"store_id": 3059814, "default_address": "Woolworths Waiata Shores"},
+    # Auckland (West)
+    {"store_id": 870058, "default_address": "Woolworths Helensville"},
+    {"store_id": 1230712, "default_address": "Woolworths Henderson"},
+    {"store_id": 1223854, "default_address": "Woolworths Hobsonville"},
+    {"store_id": 1237272, "default_address": "Woolworths Kelston"},
+    {"store_id": 620844, "default_address": "Woolworths Lincoln Road"},
+    {"store_id": 1225554, "default_address": "Woolworths Lynfield"},
+    {"store_id": 1225559, "default_address": "Woolworths Lynnmall"},
+    {"store_id": 1230704, "default_address": "Woolworths Northwest"},
+    {"store_id": 882224, "default_address": "Woolworths Pt Chevalier"},
+    {"store_id": 1232007, "default_address": "Woolworths Te Atatu South"},
+    {"store_id": 592572, "default_address": "Woolworths Westgate"},
+]
+
 # Used if the department list can't be fetched from the shell API.
 WOOLWORTHS_DEPARTMENTS_FALLBACK = [
     ("fruit-veg", "Fruit & Veg"),
