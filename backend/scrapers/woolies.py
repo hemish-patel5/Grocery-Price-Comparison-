@@ -1,11 +1,7 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
 import httpx
 import json
-import sys
 from contextlib import contextmanager
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor
 
 from utils import (
     get_path,
@@ -16,9 +12,6 @@ from utils import (
     dedupe_products,
 )
 
-app = Flask(__name__)
-CORS(app)
-
 
 WOOLWORTHS_BASE_URL = "https://www.woolworths.co.nz"
 WOOLWORTHS_STORE_ID = 9109
@@ -26,7 +19,7 @@ WOOLWORTHS_DEFAULT_ADDRESS = "Woolworths Botany"
 WOOLWORTHS_PAGE_SIZE = 48
 WOOLWORTHS_MAX_PAGES = 250
 
-
+# Used if the department list can't be fetched from the shell API.
 WOOLWORTHS_DEPARTMENTS_FALLBACK = [
     ("fruit-veg", "Fruit & Veg"),
     ("meat-poultry", "Meat & Poultry"),
@@ -231,64 +224,11 @@ def scrape_all_woolworths(store_id=WOOLWORTHS_STORE_ID, address=WOOLWORTHS_DEFAU
         return []
 
 
-def search_woolworths(query, store_id=WOOLWORTHS_STORE_ID, address=WOOLWORTHS_DEFAULT_ADDRESS):
-    try:
-        store_id = parse_store_id(store_id, WOOLWORTHS_STORE_ID)
-
-        with woolworths_client(store_id) as client:
-            raw_products = fetch_product_pages(client, {
-                "target": "search",
-                "search": query,
-                "size": WOOLWORTHS_PAGE_SIZE,
-                "inStockProductsOnly": "false",
-                "sort": "PriceAsc",
-            }, label=f"search '{query}'")
-
-            normalized_products = [
-                normalize_product(p, store_id, address)
-                for p in raw_products
-                if get_price(p) is not None
-            ]
-            return dedupe_products(normalized_products)
-    except Exception as e:
-        print(f"Woolworths error: {e}")
-        return []
-
-
-@app.route("/api/search")
-def search():
-    query = request.args.get("q", "").strip()
-    if not query:
-        return jsonify([])
-
-    woolworths_store_id = request.args.get("woolworths_store_id")
-    woolworths_address = request.args.get("woolworths_address", WOOLWORTHS_DEFAULT_ADDRESS).strip()
-
-    with ThreadPoolExecutor() as executor:
-        futures = [
-            executor.submit(search_woolworths, query, woolworths_store_id, woolworths_address),
-            #executor.submit(search_paknsave, query),
-            #executor.submit(search_newworld, query),
-        ]
-
-        results = []
-        for future in futures:
-            results.extend(future.result())
-
-    print(f"Total products found: {len(results)}")
-
-    results.sort(key=lambda x: float(x["price"]))
-    return jsonify(results)
-
-
 if __name__ == "__main__":
-    if "serve" in sys.argv[1:]:
-        app.run(host="0.0.0.0", debug=True)
-    else:
-        products = scrape_all_woolworths()
+    products = scrape_all_woolworths()
 
-        output_path = Path(__file__).resolve().parent.parent / "data" / "woolworths_products.json"
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(json.dumps(products, indent=2), encoding="utf-8")
+    output_path = Path(__file__).resolve().parent.parent / "data" / "woolworths_products.json"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(products, indent=2), encoding="utf-8")
 
-        print(f"Saved {len(products)} products to {output_path}")
+    print(f"Saved {len(products)} products to {output_path}")
