@@ -51,7 +51,8 @@ def search():
             "store": "Woolworths",
             "store_key": store.get("store_key"),
             "store_address": store.get("address"),
-            "price": f"{row['price']:.2f}" if row["price"] is not None else None,
+            "original_price": f"{row['original_price']:.2f}" if row["original_price"] is not None else None,
+            "sale_price": f"{row['sale_price']:.2f}" if row["sale_price"] is not None else None,
         })
 
         if len(products) >= SEARCH_RESULT_LIMIT:
