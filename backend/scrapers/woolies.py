@@ -3,14 +3,24 @@ import json
 from contextlib import contextmanager
 from pathlib import Path
 
-from utils import (
-    get_path,
-    first_value,
-    format_price,
-    format_unit_price,
-    parse_store_id,
-    dedupe_products,
-)
+try:
+    from .utils import (
+        get_path,
+        first_value,
+        format_price,
+        format_unit_price,
+        parse_store_id,
+        dedupe_products,
+    )
+except ImportError:
+    from utils import (
+        get_path,
+        first_value,
+        format_price,
+        format_unit_price,
+        parse_store_id,
+        dedupe_products,
+    )
 
 
 WOOLWORTHS_BASE_URL = "https://www.woolworths.co.nz"
@@ -19,17 +29,17 @@ WOOLWORTHS_MAX_PAGES = 250
 
 # Every Woolworths store in the Auckland region. The identifiers are kept in
 # JSON so the store list can be updated without editing scraper logic.
-WOOLWORTHS_AUCKLAND_STORES = json.loads(
+WOOLWORTHS_STORES = json.loads(
     (Path(__file__).with_name("woolworths_auckland_stores.json")).read_text(
         encoding="utf-8"
     )
 )
 
 # Fixed Woolworths store for testing
-woolies_store = WOOLWORTHS_AUCKLAND_STORES[0]
-WOOLWORTHS_DEFAULT_ADDRESS = woolies_store["default_address"]
-WOOLWORTHS_STORE_ID = woolies_store["fulfilment_store_id"]
-print(WOOLWORTHS_DEFAULT_ADDRESS, WOOLWORTHS_STORE_ID)
+WOOLWORTHS_DEFAULT_STORE_KEY = "quay_street"
+woolies_store = WOOLWORTHS_STORES[WOOLWORTHS_DEFAULT_STORE_KEY]
+WOOLWORTHS_DEFAULT_ADDRESS = woolies_store["address"]
+WOOLWORTHS_STORE_ID = woolies_store["fulfilmentStoreId"]
 
 # Used if the department list can't be fetched from the shell API.
 WOOLWORTHS_DEPARTMENTS_FALLBACK = [
@@ -49,8 +59,26 @@ WOOLWORTHS_DEPARTMENTS_FALLBACK = [
 ]
 
 
+def get_woolworths_store(store_key=None):
+    if isinstance(store_key, dict):
+        return store_key, store_key.get("key")
+
+    if not store_key:
+        store_key = WOOLWORTHS_DEFAULT_STORE_KEY
+
+    store = WOOLWORTHS_STORES.get(store_key)
+    if store:
+        return store, store_key
+
+    print(f"Unknown Woolworths store '{store_key}', using {WOOLWORTHS_DEFAULT_STORE_KEY}")
+    return WOOLWORTHS_STORES[WOOLWORTHS_DEFAULT_STORE_KEY], WOOLWORTHS_DEFAULT_STORE_KEY
+
+
 @contextmanager
-def woolworths_client(store_id):
+def woolworths_client(store):
+    store_id = store["fulfilmentStoreId"]
+    location_cookie = store.get("locationCookie")
+
     with httpx.Client(
         headers={
             "accept": "application/json",
@@ -62,6 +90,9 @@ def woolworths_client(store_id):
     ) as client:
         client.get(WOOLWORTHS_BASE_URL)
         client.cookies.set("fulfilmentStoreId", str(store_id), domain=".woolworths.co.nz")
+        if location_cookie:
+            client.cookies.set("cw_loc", location_cookie, domain=".woolworths.co.nz")
+            client.cookies.set("location", location_cookie, domain=".woolworths.co.nz")
         yield client
 
 
@@ -143,9 +174,10 @@ def fetch_product_pages(client, params, label):
     return raw_products
 
 
-def normalize_product(p, store_id, address, department=None):
+def normalize_product(p, store, department=None, store_key=None):
     price = p.get("price", {})
     size = p.get("size", {})
+    store_id = store["fulfilmentStoreId"]
     product_id = first_value(p, [
         ("sku",),
         ("productId",),
@@ -187,8 +219,11 @@ def normalize_product(p, store_id, address, department=None):
         "image_url": get_path(p, ("images", "big")),
         "product_url": woolworths_product_url(product_id, product_path),
         "is_on_special": bool(price.get("isSpecial")),
+        "source_store_key": store_key,
         "source_store_id": str(store_id),
-        "source_store_address": address,
+        "source_store_address": store["address"],
+        "source_area_id": store.get("areaId"),
+        "source_pickup_address_id": store.get("pickupAddressId"),
         "barcode": p.get("barcode"),
         "variety": p.get("variety"),
         "unit": p.get("unit"),
@@ -223,11 +258,17 @@ def get_woolworths_departments(client):
     return WOOLWORTHS_DEPARTMENTS_FALLBACK
 
 
-def scrape_all_woolworths(store_id=WOOLWORTHS_STORE_ID, address=WOOLWORTHS_DEFAULT_ADDRESS):
+def scrape_all_woolworths(store_key=WOOLWORTHS_DEFAULT_STORE_KEY):
     try:
-        store_id = parse_store_id(store_id, WOOLWORTHS_STORE_ID)
+        store, resolved_store_key = get_woolworths_store(store_key)
+        store["fulfilmentStoreId"] = parse_store_id(
+            store.get("fulfilmentStoreId"),
+            WOOLWORTHS_STORE_ID,
+        )
 
-        with woolworths_client(store_id) as client:
+        print(f"Scraping store: {store['address']} {store['fulfilmentStoreId']}")
+
+        with woolworths_client(store) as client:
             departments = get_woolworths_departments(client)
             print(f"Scraping {len(departments)} departments: {', '.join(slug for slug, _ in departments)}")
 
@@ -254,7 +295,12 @@ def scrape_all_woolworths(store_id=WOOLWORTHS_STORE_ID, address=WOOLWORTHS_DEFAU
                 )
 
                 all_products.extend(
-                    normalize_product(p, store_id, address, department=department_label)
+                    normalize_product(
+                        p,
+                        store,
+                        department=department_label,
+                        store_key=resolved_store_key,
+                    )
                     for p in products_with_price
                 )
 
