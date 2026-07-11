@@ -2,6 +2,7 @@ import httpx
 import json
 import time
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .utils import (
@@ -18,6 +19,16 @@ WOOLWORTHS_PAGE_SIZE = 48
 WOOLWORTHS_MAX_PAGES = 250
 WOOLWORTHS_PAGE_RETRIES = 4
 
+# Aisle membership is catalog taxonomy (same at every store), so the
+# product -> aisle map is crawled once and cached here, then reused by
+# every store's department scrape.
+AISLE_MAP_PATH = Path(__file__).resolve().parent.parent / "data" / "woolworths_aisle_map.json"
+AISLE_MAP_MAX_AGE_DAYS = 7
+
+# Promotional pseudo-aisles: only used for a product's aisle if no real
+# aisle contains it.
+PROMO_AISLES = {"fresh deals", "in season", "the odd bunch", "new"}
+
 # Every Woolworths store in the Auckland region taken from JSON file
 WOOLWORTHS_STORES = json.loads(
     (Path(__file__).with_name("woolworths_auckland_stores.json")).read_text(
@@ -27,15 +38,15 @@ WOOLWORTHS_STORES = json.loads(
 
 # The stores this scraper runs over: Auckland (West)
 WOOLWORTHS_AUCKLAND_WEST_STORES = [
-    "helensville",
-    "henderson",
-    "hobsonville",
-    "kelston",
-    "lincoln_road",
-    "lynfield",
-    "lynnmall",
-    "northwest",
-    "pt_chevalier",
+  #  "helensville",
+  #  "henderson",
+  #  "hobsonville",
+  #  "kelston",
+  #  "lincoln_road",
+  #  "lynfield",
+  #  "lynnmall",
+  #  "northwest",
+  #  "pt_chevalier",
     "te_atatu_south",
     "westgate",
 ]
@@ -265,7 +276,94 @@ def get_woolworths_departments(client):
     return WOOLWORTHS_DEPARTMENTS_FALLBACK
 
 
-def scrape_store(store_key):
+def build_aisle_map(client):
+    """Crawl every department's aisles once, recording product -> aisle.
+
+    Aisle membership is the same at every store, so this runs once and the
+    result is reused by every store's department scrape. Real aisles are
+    crawled before promotional pseudo-aisles and existing entries are never
+    overwritten, so 'Fresh Deals' can't claim a product that lives in 'Fruit'.
+    """
+    departments = get_woolworths_departments(client)
+    aisle_map = {}
+
+    for slug, _ in departments:
+        department_params = {
+            "target": "browse",
+            "dasFilter": f"Department;;{slug};false",
+            "size": WOOLWORTHS_PAGE_SIZE,
+            "inStockProductsOnly": "false",
+            "sort": "PriceAsc",
+        }
+
+        try:
+            aisle_facets = fetch_das_facets(client, department_params, label=slug, group="Aisle")
+        except Exception as e:
+            print(f"Woolworths {slug} aisle list error, skipping department in aisle map: {e}")
+            continue
+
+        # real aisles first so they win over promotional pseudo-aisles
+        aisle_facets.sort(key=lambda f: f["name"].lower() in PROMO_AISLES)
+
+        for aisle in aisle_facets:
+            aisle_label = aisle["name"]
+            # The aisle filter only works alongside the department filter
+            # (a lone Aisle dasFilter returns totalItems=-1), and needs the
+            # 4-segment form: Aisle;{value};{name};false
+            aisle_params = {
+                "target": "browse",
+                "dasFilter": [
+                    f"Department;;{slug};false",
+                    f"Aisle;{aisle['value']};{aisle_label};false",
+                ],
+                "size": WOOLWORTHS_PAGE_SIZE,
+                "inStockProductsOnly": "false",
+                "sort": "PriceAsc",
+            }
+
+            try:
+                raw_products = fetch_product_pages(client, aisle_params, label=f"{slug}/{aisle_label}")
+            except Exception as e:
+                print(f"Woolworths {slug}/{aisle_label} FAILED after retries, skipping aisle: {e}")
+                continue
+
+            for product in raw_products:
+                key = str(product_key(product))
+                if key not in aisle_map:
+                    aisle_map[key] = aisle_label
+
+    return aisle_map
+
+
+def load_or_build_aisle_map(store):
+    """Return the cached product -> aisle map, rebuilding it when stale."""
+    if AISLE_MAP_PATH.exists():
+        try:
+            cached = json.loads(AISLE_MAP_PATH.read_text(encoding="utf-8"))
+            built_at = datetime.fromisoformat(cached["built_at"])
+            age = datetime.now(timezone.utc) - built_at
+            if age < timedelta(days=AISLE_MAP_MAX_AGE_DAYS):
+                print(f"Using cached aisle map ({len(cached['aisles'])} products, {age.days}d old)")
+                return cached["aisles"]
+            print(f"Aisle map is {age.days}d old, rebuilding")
+        except Exception as e:
+            print(f"Aisle map cache unreadable, rebuilding: {e}")
+
+    print("Building aisle map (one-off crawl of every aisle)...")
+    with woolworths_client(store) as client:
+        aisle_map = build_aisle_map(client)
+
+    AISLE_MAP_PATH.parent.mkdir(parents=True, exist_ok=True)
+    AISLE_MAP_PATH.write_text(json.dumps({
+        "built_at": datetime.now(timezone.utc).isoformat(),
+        "aisles": aisle_map,
+    }), encoding="utf-8")
+    print(f"Aisle map built: {len(aisle_map)} products, saved to {AISLE_MAP_PATH}")
+
+    return aisle_map
+
+
+def scrape_store(store_key, aisle_map):
     store = WOOLWORTHS_STORES[store_key]
     print(f"Scraping store: {store['address']} {store['fulfilmentStoreId']}")
 
@@ -275,7 +373,6 @@ def scrape_store(store_key):
 
         all_products = []
         failed_departments = []
-        failed_aisles = []
         for slug, department_label in departments:
             department_params = {
                 "target": "browse",
@@ -286,93 +383,39 @@ def scrape_store(store_key):
             }
 
             try:
-                aisle_facets = fetch_das_facets(
-                    client,
-                    department_params,
-                    label=slug,
-                    group="Aisle",
-                )
+                raw_products = fetch_product_pages(client, department_params, label=slug)
             except Exception as e:
-                print(f"Woolworths {slug} aisle list error, scraping department only: {e}")
-                aisle_facets = []
-
-            if not aisle_facets:
-                try:
-                    raw_products = fetch_product_pages(client, department_params, label=slug)
-                except Exception as e:
-                    print(f"Woolworths {slug} FAILED after retries, skipping department: {e}")
-                    failed_departments.append(slug)
-                    continue
-
-                products_with_price = [
-                    product
-                    for product in raw_products
-                    if get_price(product) is not None
-                ]
-
-                print(
-                    f"Woolworths {department_label}: "
-                    f"deduped_raw={len(raw_products)}, "
-                    f"with_price={len(products_with_price)}, "
-                    f"without_price={len(raw_products) - len(products_with_price)}"
-                )
-
-                all_products.extend(
-                    normalize_product(p, store, store_key, department=department_label)
-                    for p in products_with_price
-                )
+                print(f"Woolworths {slug} FAILED after retries, skipping department: {e}")
+                failed_departments.append(slug)
                 continue
 
+            products_with_price = [
+                product
+                for product in raw_products
+                if get_price(product) is not None
+            ]
+
+            with_aisle = sum(
+                1 for p in products_with_price
+                if str(product_key(p)) in aisle_map
+            )
             print(
-                f"Woolworths {department_label}: scraping {len(aisle_facets)} aisles: "
-                f"{', '.join(facet['name'] for facet in aisle_facets)}"
+                f"Woolworths {department_label}: "
+                f"deduped_raw={len(raw_products)}, "
+                f"with_price={len(products_with_price)}, "
+                f"with_aisle={with_aisle}"
             )
 
-            for aisle in aisle_facets:
-                aisle_label = aisle["name"]
-                aisle_value = aisle["value"]
-                aisle_params = {
-                    "target": "browse",
-                    "dasFilter": f"Aisle;;{aisle_value};false",
-                    "size": WOOLWORTHS_PAGE_SIZE,
-                    "inStockProductsOnly": "false",
-                    "sort": "PriceAsc",
-                }
-
-                try:
-                    raw_products = fetch_product_pages(
-                        client,
-                        aisle_params,
-                        label=f"{slug}/{aisle_label}",
-                    )
-                except Exception as e:
-                    print(f"Woolworths {slug}/{aisle_label} FAILED after retries, skipping aisle: {e}")
-                    failed_aisles.append(f"{department_label}/{aisle_label}")
-                    continue
-
-                products_with_price = [
-                    product
-                    for product in raw_products
-                    if get_price(product) is not None
-                ]
-
-                print(
-                    f"Woolworths {department_label}/{aisle_label}: "
-                    f"deduped_raw={len(raw_products)}, "
-                    f"with_price={len(products_with_price)}, "
-                    f"without_price={len(raw_products) - len(products_with_price)}"
+            all_products.extend(
+                normalize_product(
+                    p,
+                    store,
+                    store_key,
+                    department=department_label,
+                    aisle=aisle_map.get(str(product_key(p))),
                 )
-
-                all_products.extend(
-                    normalize_product(
-                        p,
-                        store,
-                        store_key,
-                        department=department_label,
-                        aisle=aisle_label,
-                    )
-                    for p in products_with_price
-                )
+                for p in products_with_price
+            )
 
         deduped_products = dedupe_products(all_products)
         print(
@@ -383,8 +426,6 @@ def scrape_store(store_key):
         )
         if failed_departments:
             print(f"WARNING: {len(failed_departments)} departments failed and are missing: {', '.join(failed_departments)}")
-        if failed_aisles:
-            print(f"WARNING: {len(failed_aisles)} aisles failed and are missing: {', '.join(failed_aisles)}")
 
         return deduped_products
 
@@ -396,12 +437,16 @@ if __name__ == "__main__":
     uploaded_counts = {}
     failed_stores = []
 
+    aisle_map = load_or_build_aisle_map(
+        WOOLWORTHS_STORES[WOOLWORTHS_AUCKLAND_WEST_STORES[0]]
+    )
+
     for position, store_key in enumerate(WOOLWORTHS_AUCKLAND_WEST_STORES, 1):
         try:
             store = WOOLWORTHS_STORES[store_key]
             print(f"\n===== [{position}/{len(WOOLWORTHS_AUCKLAND_WEST_STORES)}] {store['address']} ({store_key}) =====")
 
-            products = scrape_store(store_key)
+            products = scrape_store(store_key, aisle_map)
             if not products:
                 raise RuntimeError("scrape returned no products")
 
