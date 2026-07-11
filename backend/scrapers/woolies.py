@@ -38,6 +38,21 @@ WOOLWORTHS_STORES = json.loads(
     )
 )
 
+# Stores in the Auckland (West) area — the set the scraper currently runs over.
+WOOLWORTHS_AUCKLAND_WEST_STORES = [
+    "helensville",
+    "henderson",
+    "hobsonville",
+    "kelston",
+    "lincoln_road",
+    "lynfield",
+    "lynnmall",
+    "northwest",
+    "pt_chevalier",
+    "te_atatu_south",
+    "westgate",
+]
+
 # Fixed Woolworths store for testing
 WOOLWORTHS_DEFAULT_STORE_KEY = "quay_street"
 WOOLWORTHS_STORE_KEY_ALIASES = {
@@ -379,9 +394,9 @@ if __name__ == "__main__":
     except ImportError:
         from db import upload_products
 
-    # scrape every store from the json file, or only the store keys given
-    # on the command line, e.g.: python woolies.py quay_street botany
-    store_keys = sys.argv[1:] or list(WOOLWORTHS_STORES)
+    # scrape the Auckland West stores, or only the store keys given on the
+    # command line, e.g.: python woolies.py quay_street botany
+    store_keys = WOOLWORTHS_AUCKLAND_WEST_STORES
 
     started = time.time()
     uploaded_counts = {}
