@@ -50,11 +50,17 @@ def search():
 
     query_words = words(query)
 
-    def aisle_tier(row):
-        """0 when the query matches the product's aisle label — the
-        strongest signal the product IS the searched thing ('milk' ->
-        aisle 'Milk' beats 'milk' somewhere in a chocolate bar's name)."""
-        return 0 if query_words & words(row.get("aisle")) else 1
+    def relevance_tier(row):
+        """0 = query matches the product's name AND its aisle label (real
+        eggs in the 'Eggs, Butter & Spreads' aisle), 1 = one of the two
+        (margarine in that aisle, or a chocolate 'egg' by name), 2 = rest."""
+        name_hit = bool(query_words & words(f"{row.get('name')} {row.get('brand')}"))
+        aisle_hit = bool(query_words & words(row.get("aisle")))
+        if name_hit and aisle_hit:
+            return 0
+        if name_hit or aisle_hit:
+            return 1
+        return 2
 
     # The same product is stored once per scraped store. Rows arrive sorted
     # cheapest-first, so keeping the first row per product keeps its
@@ -67,9 +73,9 @@ def search():
         seen_product_ids.add(row["product_id"])
         deduped.append(row)
 
-    # aisle-matched products first, cheapest first within each tier
+    # most relevant tier first, cheapest first within each tier
     deduped.sort(key=lambda row: (
-        aisle_tier(row),
+        relevance_tier(row),
         row["price"] if row["price"] is not None else float("inf"),
     ))
 

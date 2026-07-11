@@ -23,7 +23,7 @@ WOOLWORTHS_PAGE_RETRIES = 4
 # product -> aisle map is crawled once and kept permanently. Delete the
 # file to force a rebuild (e.g. to pick up newly added products).
 AISLE_MAP_PATH = Path(__file__).resolve().parent.parent / "data" / "woolworths_aisle_map.json"
-woolworths_stores = Path(__file__).resolve().parent.parent / "data" / "woolworths_auckland_stores.json"
+stores_path = Path(__file__).resolve().parent.parent / "data" / "woolworths_auckland_stores.json"
 
 
 # Promotional pseudo-aisles: only used for a product's aisle if no real
@@ -31,7 +31,7 @@ woolworths_stores = Path(__file__).resolve().parent.parent / "data" / "woolworth
 PROMO_AISLES = {"fresh deals", "in season", "the odd bunch", "new"}
 
 # Every Woolworths store in the Auckland region taken from JSON file
-WOOLWORTHS_STORES = json.loads(woolworths_stores.read_text(encoding="utf-8"))
+WOOLWORTHS_STORES = json.loads(stores_path.read_text(encoding="utf-8"))
 
 # The stores this scraper runs over: Auckland (West)
 WOOLWORTHS_AUCKLAND_WEST_STORES = [
