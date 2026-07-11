@@ -2,7 +2,7 @@ import httpx
 import json
 import time
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .utils import (
@@ -20,10 +20,9 @@ WOOLWORTHS_MAX_PAGES = 250
 WOOLWORTHS_PAGE_RETRIES = 4
 
 # Aisle membership is catalog taxonomy (same at every store), so the
-# product -> aisle map is crawled once and cached here, then reused by
-# every store's department scrape.
+# product -> aisle map is crawled once and kept permanently. Delete the
+# file to force a rebuild (e.g. to pick up newly added products).
 AISLE_MAP_PATH = Path(__file__).resolve().parent.parent / "data" / "woolworths_aisle_map.json"
-AISLE_MAP_MAX_AGE_DAYS = 7
 
 # Promotional pseudo-aisles: only used for a product's aisle if no real
 # aisle contains it.
@@ -336,18 +335,14 @@ def build_aisle_map(client):
 
 
 def load_or_build_aisle_map(store):
-    """Return the cached product -> aisle map, rebuilding it when stale."""
+    """Return the product -> aisle map, building it only when missing."""
     if AISLE_MAP_PATH.exists():
         try:
             cached = json.loads(AISLE_MAP_PATH.read_text(encoding="utf-8"))
-            built_at = datetime.fromisoformat(cached["built_at"])
-            age = datetime.now(timezone.utc) - built_at
-            if age < timedelta(days=AISLE_MAP_MAX_AGE_DAYS):
-                print(f"Using cached aisle map ({len(cached['aisles'])} products, {age.days}d old)")
-                return cached["aisles"]
-            print(f"Aisle map is {age.days}d old, rebuilding")
+            print(f"Using aisle map ({len(cached['aisles'])} products, built {cached.get('built_at', '?')[:10]})")
+            return cached["aisles"]
         except Exception as e:
-            print(f"Aisle map cache unreadable, rebuilding: {e}")
+            print(f"Aisle map file unreadable, rebuilding: {e}")
 
     print("Building aisle map (one-off crawl of every aisle)...")
     with woolworths_client(store) as client:
