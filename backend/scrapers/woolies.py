@@ -37,9 +37,10 @@ WOOLWORTHS_STORES = json.loads(
 
 # Fixed Woolworths store for testing
 WOOLWORTHS_DEFAULT_STORE_KEY = "quay_street"
-woolies_store = WOOLWORTHS_STORES[WOOLWORTHS_DEFAULT_STORE_KEY]
-WOOLWORTHS_DEFAULT_ADDRESS = woolies_store["address"]
-WOOLWORTHS_STORE_ID = woolies_store["fulfilmentStoreId"]
+WOOLWORTHS_STORE_KEY_ALIASES = {
+    "auckland_quay_street": "quay_street",
+    "auckland_victoria_street_west": "victoria_street_west",
+}
 
 # Used if the department list can't be fetched from the shell API.
 WOOLWORTHS_DEPARTMENTS_FALLBACK = [
@@ -66,18 +67,40 @@ def get_woolworths_store(store_key=None):
     if not store_key:
         store_key = WOOLWORTHS_DEFAULT_STORE_KEY
 
+    store_key = WOOLWORTHS_STORE_KEY_ALIASES.get(store_key, store_key)
     store = WOOLWORTHS_STORES.get(store_key)
     if store:
         return store, store_key
 
     print(f"Unknown Woolworths store '{store_key}', using {WOOLWORTHS_DEFAULT_STORE_KEY}")
-    return WOOLWORTHS_STORES[WOOLWORTHS_DEFAULT_STORE_KEY], WOOLWORTHS_DEFAULT_STORE_KEY
+    default_store_key = WOOLWORTHS_STORE_KEY_ALIASES.get(
+        WOOLWORTHS_DEFAULT_STORE_KEY,
+        WOOLWORTHS_DEFAULT_STORE_KEY,
+    )
+    return WOOLWORTHS_STORES[default_store_key], default_store_key
+
+
+woolies_store, _ = get_woolworths_store(WOOLWORTHS_DEFAULT_STORE_KEY)
+WOOLWORTHS_DEFAULT_ADDRESS = woolies_store["address"]
+WOOLWORTHS_STORE_ID = woolies_store["fulfilmentStoreId"]
+
+
+def woolworths_location_cookie(store):
+    if store.get("locationCookie"):
+        return store["locationCookie"]
+
+    return (
+        f"dm-Pickup,"
+        f"f-{store.get('fulfilmentStoreId')},"
+        f"a-{store.get('areaId')},"
+        f"s-{store.get('pickupAddressId')}"
+    )
 
 
 @contextmanager
 def woolworths_client(store):
     store_id = store["fulfilmentStoreId"]
-    location_cookie = store.get("locationCookie")
+    location_cookie = woolworths_location_cookie(store)
 
     with httpx.Client(
         headers={
@@ -91,8 +114,7 @@ def woolworths_client(store):
         client.get(WOOLWORTHS_BASE_URL)
         client.cookies.set("fulfilmentStoreId", str(store_id), domain=".woolworths.co.nz")
         if location_cookie:
-            client.cookies.set("cw_loc", location_cookie, domain=".woolworths.co.nz")
-            client.cookies.set("location", location_cookie, domain=".woolworths.co.nz")
+            client.cookies.set("cw-lrkswrdjp", location_cookie, domain=".woolworths.co.nz")
         yield client
 
 
