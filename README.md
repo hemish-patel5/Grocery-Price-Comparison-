@@ -16,7 +16,7 @@ A full-stack web application designed to help New Zealand shoppers compare real-
 * **Flask-CORS** (Cross-Origin Resource Sharing)
   
 ### Database
-* **Supabase (PostgreSQL)
+* **Supabase** (PostgreSQL)
 
 ---
 
