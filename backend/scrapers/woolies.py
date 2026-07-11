@@ -1,28 +1,16 @@
 import httpx
 import json
-import sys
 import time
 from contextlib import contextmanager
 from pathlib import Path
 
-try:
-    from .utils import (
-        get_path,
-        first_value,
-        format_price,
-        format_unit_price,
-        parse_store_id,
-        dedupe_products,
-    )
-except ImportError:
-    from utils import (
-        get_path,
-        first_value,
-        format_price,
-        format_unit_price,
-        parse_store_id,
-        dedupe_products,
-    )
+from .utils import (
+    get_path,
+    first_value,
+    format_price,
+    format_unit_price,
+    dedupe_products,
+)
 
 
 WOOLWORTHS_BASE_URL = "https://www.woolworths.co.nz"
@@ -30,15 +18,14 @@ WOOLWORTHS_PAGE_SIZE = 48
 WOOLWORTHS_MAX_PAGES = 250
 WOOLWORTHS_PAGE_RETRIES = 4
 
-# Every Woolworths store in the Auckland region. The identifiers are kept in
-# JSON so the store list can be updated without editing scraper logic.
+# Every Woolworths store in the Auckland region taken from JSON file
 WOOLWORTHS_STORES = json.loads(
     (Path(__file__).with_name("woolworths_auckland_stores.json")).read_text(
         encoding="utf-8"
     )
 )
 
-# Stores in the Auckland (West) area — the set the scraper currently runs over.
+# The stores this scraper runs over: Auckland (West)
 WOOLWORTHS_AUCKLAND_WEST_STORES = [
     "helensville",
     "henderson",
@@ -52,13 +39,6 @@ WOOLWORTHS_AUCKLAND_WEST_STORES = [
     "te_atatu_south",
     "westgate",
 ]
-
-# Fixed Woolworths store for testing
-WOOLWORTHS_DEFAULT_STORE_KEY = "quay_street"
-WOOLWORTHS_STORE_KEY_ALIASES = {
-    "auckland_quay_street": "quay_street",
-    "auckland_victoria_street_west": "victoria_street_west",
-}
 
 # Used if the department list can't be fetched from the shell API.
 WOOLWORTHS_DEPARTMENTS_FALLBACK = [
@@ -76,31 +56,6 @@ WOOLWORTHS_DEPARTMENTS_FALLBACK = [
     ("baby-child", "Baby & Child"),
     ("pet", "Pet"),
 ]
-
-
-def get_woolworths_store(store_key=None):
-    if isinstance(store_key, dict):
-        return store_key, store_key.get("key")
-
-    if not store_key:
-        store_key = WOOLWORTHS_DEFAULT_STORE_KEY
-
-    store_key = WOOLWORTHS_STORE_KEY_ALIASES.get(store_key, store_key)
-    store = WOOLWORTHS_STORES.get(store_key)
-    if store:
-        return store, store_key
-
-    print(f"Unknown Woolworths store '{store_key}', using {WOOLWORTHS_DEFAULT_STORE_KEY}")
-    default_store_key = WOOLWORTHS_STORE_KEY_ALIASES.get(
-        WOOLWORTHS_DEFAULT_STORE_KEY,
-        WOOLWORTHS_DEFAULT_STORE_KEY,
-    )
-    return WOOLWORTHS_STORES[default_store_key], default_store_key
-
-
-woolies_store, _ = get_woolworths_store(WOOLWORTHS_DEFAULT_STORE_KEY)
-WOOLWORTHS_DEFAULT_ADDRESS = woolies_store["address"]
-WOOLWORTHS_STORE_ID = woolies_store["fulfilmentStoreId"]
 
 
 def woolworths_location_cookie(store):
@@ -236,7 +191,7 @@ def fetch_product_pages(client, params, label):
     return raw_products
 
 
-def normalize_product(p, store, department=None, store_key=None):
+def normalize_product(p, store, store_key, department=None):
     price = p.get("price", {})
     size = p.get("size", {})
     store_id = store["fulfilmentStoreId"]
@@ -320,94 +275,74 @@ def get_woolworths_departments(client):
     return WOOLWORTHS_DEPARTMENTS_FALLBACK
 
 
-def scrape_all_woolworths(store_key=WOOLWORTHS_DEFAULT_STORE_KEY):
-    try:
-        store, resolved_store_key = get_woolworths_store(store_key)
-        store["fulfilmentStoreId"] = parse_store_id(
-            store.get("fulfilmentStoreId"),
-            WOOLWORTHS_STORE_ID,
-        )
+def scrape_store(store_key):
+    store = WOOLWORTHS_STORES[store_key]
+    print(f"Scraping store: {store['address']} {store['fulfilmentStoreId']}")
 
-        print(f"Scraping store: {store['address']} {store['fulfilmentStoreId']}")
+    with woolworths_client(store) as client:
+        departments = get_woolworths_departments(client)
+        print(f"Scraping {len(departments)} departments: {', '.join(slug for slug, _ in departments)}")
 
-        with woolworths_client(store) as client:
-            departments = get_woolworths_departments(client)
-            print(f"Scraping {len(departments)} departments: {', '.join(slug for slug, _ in departments)}")
+        all_products = []
+        failed_departments = []
+        for slug, department_label in departments:
+            try:
+                raw_products = fetch_product_pages(client, {
+                    "target": "browse",
+                    "dasFilter": f"Department;;{slug};false",
+                    "size": WOOLWORTHS_PAGE_SIZE,
+                    "inStockProductsOnly": "false",
+                    "sort": "PriceAsc",
+                }, label=slug)
+            except Exception as e:
+                print(f"Woolworths {slug} FAILED after retries, skipping department: {e}")
+                failed_departments.append(slug)
+                continue
 
-            all_products = []
-            failed_departments = []
-            for slug, department_label in departments:
-                try:
-                    raw_products = fetch_product_pages(client, {
-                        "target": "browse",
-                        "dasFilter": f"Department;;{slug};false",
-                        "size": WOOLWORTHS_PAGE_SIZE,
-                        "inStockProductsOnly": "false",
-                        "sort": "PriceAsc",
-                    }, label=slug)
-                except Exception as e:
-                    print(f"Woolworths {slug} FAILED after retries, skipping department: {e}")
-                    failed_departments.append(slug)
-                    continue
-                products_with_price = [
-                    product
-                    for product in raw_products
-                    if get_price(product) is not None
-                ]
+            products_with_price = [
+                product
+                for product in raw_products
+                if get_price(product) is not None
+            ]
 
-                print(
-                    f"Woolworths {department_label}: "
-                    f"deduped_raw={len(raw_products)}, "
-                    f"with_price={len(products_with_price)}, "
-                    f"without_price={len(raw_products) - len(products_with_price)}"
-                )
-
-                all_products.extend(
-                    normalize_product(
-                        p,
-                        store,
-                        department=department_label,
-                        store_key=resolved_store_key,
-                    )
-                    for p in products_with_price
-                )
-
-            deduped_products = dedupe_products(all_products)
             print(
-                f"Woolworths final: "
-                f"normalized={len(all_products)}, "
-                f"deduped={len(deduped_products)}, "
-                f"removed={len(all_products) - len(deduped_products)}"
+                f"Woolworths {department_label}: "
+                f"deduped_raw={len(raw_products)}, "
+                f"with_price={len(products_with_price)}, "
+                f"without_price={len(raw_products) - len(products_with_price)}"
             )
-            if failed_departments:
-                print(f"WARNING: {len(failed_departments)} departments failed and are missing: {', '.join(failed_departments)}")
 
-            return deduped_products
-    except Exception as e:
-        print(f"Woolworths scrape error: {e}")
-        return []
+            all_products.extend(
+                normalize_product(p, store, store_key, department=department_label)
+                for p in products_with_price
+            )
+
+        deduped_products = dedupe_products(all_products)
+        print(
+            f"Woolworths final: "
+            f"normalized={len(all_products)}, "
+            f"deduped={len(deduped_products)}, "
+            f"removed={len(all_products) - len(deduped_products)}"
+        )
+        if failed_departments:
+            print(f"WARNING: {len(failed_departments)} departments failed and are missing: {', '.join(failed_departments)}")
+
+        return deduped_products
 
 
 if __name__ == "__main__":
-    try:
-        from .db import upload_products
-    except ImportError:
-        from db import upload_products
-
-    # scrape the Auckland West stores, or only the store keys given on the
-    # command line, e.g.: python woolies.py quay_street botany
-    store_keys = WOOLWORTHS_AUCKLAND_WEST_STORES
+    from .db import upload_products
 
     started = time.time()
     uploaded_counts = {}
     failed_stores = []
 
-    for position, requested_key in enumerate(store_keys, 1):
-        store, store_key = get_woolworths_store(requested_key)
-        print(f"\n===== [{position}/{len(store_keys)}] {store['address']} ({store_key}) =====")
-
+    for position, store_key in enumerate(WOOLWORTHS_AUCKLAND_WEST_STORES, 1):
         try:
-            products = scrape_all_woolworths(store_key)
+            store = WOOLWORTHS_STORES[store_key]
+            print(f"\n===== [{position}/{len(WOOLWORTHS_AUCKLAND_WEST_STORES)}] {store['address']} ({store_key}) =====")
+
+            products = scrape_store(store_key)
             if not products:
                 raise RuntimeError("scrape returned no products")
 
@@ -420,7 +355,7 @@ if __name__ == "__main__":
     elapsed_minutes = (time.time() - started) / 60
     print(
         f"\nFinished in {elapsed_minutes:.1f} min: "
-        f"{len(uploaded_counts)}/{len(store_keys)} stores uploaded, "
+        f"{len(uploaded_counts)}/{len(WOOLWORTHS_AUCKLAND_WEST_STORES)} stores uploaded, "
         f"{sum(uploaded_counts.values())} products total"
     )
     if failed_stores:
