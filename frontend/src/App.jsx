@@ -6,9 +6,11 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000
 const App = () => {
   const [query, setQuery] = useState("");
   const [products, setProducts] = useState([]);
+  const [hasSearched, setHasSearched] = useState(false);
 
   const handleSearch = async () => {
     try {
+      setHasSearched(true);
       const res = await fetch(`${API_BASE_URL}/api/search?q=${encodeURIComponent(query)}`);
       const data = await res.json();
       setProducts(Array.isArray(data) ? data : []);
@@ -21,6 +23,12 @@ const App = () => {
     if (store === "PAK'nSAVE") return "text-black bg-yellow-300";
     if (store === "New World") return "text-white bg-red-500 ";
     return "text-white bg-green-600";
+  };
+
+  const formatPrice = (value) => {
+    if (value === null || value === undefined || value === "") return "N/A";
+    const number = Number(value);
+    return Number.isNaN(number) ? value : `$${number.toFixed(2)}`;
   };
 
   return (
@@ -63,69 +71,64 @@ const App = () => {
       </div>
 
       {/* --- RESULTS SECTION --- */}
-      <div className="w-full max-w-2xl mt-12">
-        {products.length > 0 && (
-          <div className="group bg-blue-100 border border-blue-200 p-8 mb-7 rounded-2xl shadow-md flex flex-col items-start hover:shadow-xl hover:border-blue-300 transition-all cursor-default">
-            {/* 1. Small writing at the top */}
-            <span className="text-xs uppercase tracking-widest text-blue-600 font-bold mb-3">
-              Cheapest Found
-            </span>
-
-            {/* 2. Item and Price (Large and Standout) */}
-            <div className="flex justify-between items-center w-full">
-              <h2 className="uppercase text-2xl font-black text-gray-900 leading-tight">
-                {products[0].name}
-              </h2>
-
-              {/* The matching Price Tag style with hover effect */}
-              <div className="bg-blue-600 text-white px-5 py-3 rounded-xl shadow-lg transform group-hover:scale-110 transition-transform">
-                <span className="text-2xl opacity-80 mr-1 font-medium">$</span>
-                <span className="text-3xl font-black tracking-tighter">
-                  {products[0].price}
-                </span>
-              </div>
-            </div>
-
-            {/* 3. Store name at the bottom */}
-            <div className="mt-6 pt-4 border-t border-blue-200 w-full flex items-center justify-between">
-              <span
-                className={`text-sm font-bold px-4 py-1.5 rounded-full tracking-tight ${storeColor(products[0].store)}`}
-              >
-                {products[0].store}
-              </span>
-            </div>
-          </div>
+      <div className="w-full max-w-3xl mt-12">
+        {hasSearched && products.length === 0 && (
+          <p className="text-center text-gray-500 font-semibold">No products found.</p>
         )}
 
-        <ul className="grid gap-4 w-full max-w-2xl mt-8">
-          {products.slice(1).map((p, i) => (
+        <ul className="grid gap-4 w-full">
+          {products.map((p, i) => (
             <li
-              key={i}
-              className="group bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex justify-between items-center hover:shadow-md hover:border-blue-200 transition-all"
+              key={p.product_id || i}
+              className="group bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex gap-5 items-center hover:shadow-md hover:border-blue-200 transition-all"
             >
-              {/* Product Name & Store Label */}
-              <div className="flex flex-col items-start">
-                <span
-                  className={`text-[10px] font-black px-3 py-1 rounded-full  tracking-widest mb-2 shadow-sm ${storeColor(p.store)}`}
-                >
-                  {p.store}
-                </span>
-                <span className="text-lg font-semibold uppercase text-gray-800 group-hover:text-blue-900 transition-colors leading-tight">
-                  {p.name}
-                </span>
+              <div className="h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-gray-100 border border-gray-100">
+                {p.image_url ? (
+                  <img
+                    src={p.image_url}
+                    alt={p.name}
+                    className="h-full w-full object-contain p-2"
+                    loading="lazy"
+                  />
+                ) : (
+                  <div className="h-full w-full flex items-center justify-center text-xs font-bold uppercase text-gray-400">
+                    No image
+                  </div>
+                )}
               </div>
 
-              {/* High-Contrast Price Tag */}
-              <div className="flex flex-col items-end">
-                <div className="bg-blue-600 text-white px-4 py-2 rounded-xl shadow-sm transform group-hover:scale-105 transition-transform">
-                  <span className="text-xl opacity-80 mr-1 font-medium">$</span>
-                  <span className="text-2xl font-black tracking-tight">
-                    {p.price}
+              <div className="min-w-0 flex-1">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <span
+                    className={`inline-flex text-[10px] font-black px-3 py-1 rounded-full tracking-widest shadow-sm ${storeColor(p.store)}`}
+                  >
+                    {p.store}
+                  </span>
+                  <span className="text-xs font-semibold text-gray-500">
+                    {p.store_address || "Store address unavailable"}
                   </span>
                 </div>
-                <span className="text-[10px] px-2 text-gray-400 mt-1 font-medium uppercase">
-                  Final Price
+                <p className="text-sm font-bold uppercase text-blue-600 truncate">
+                  {p.brand || "Unknown brand"}
+                </p>
+                <h2 className="text-lg font-semibold text-gray-800 group-hover:text-blue-900 transition-colors leading-tight">
+                  {p.name}
+                </h2>
+              </div>
+
+              <div className="flex min-w-28 flex-col items-end gap-1 text-right">
+                <span className="text-xs font-bold uppercase text-gray-400">
+                  Price
                 </span>
+                <strong className="text-2xl font-black tracking-tight text-gray-900">
+                  {formatPrice(p.original_price)}
+                </strong>
+                <span className="text-xs font-bold uppercase text-gray-400 mt-2">
+                  Sale price
+                </span>
+                <strong className="text-lg font-black tracking-tight text-blue-600">
+                  {formatPrice(p.sale_price)}
+                </strong>
               </div>
             </li>
           ))}
