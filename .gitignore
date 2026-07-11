@@ -17,6 +17,7 @@ __pycache__/
 *$py.class
 backend/.env
 .env
+data
 
 # --- Logs & Debug ---
 *.log

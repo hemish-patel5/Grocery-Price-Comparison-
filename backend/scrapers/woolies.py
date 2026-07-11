@@ -14,8 +14,6 @@ from utils import (
 
 
 WOOLWORTHS_BASE_URL = "https://www.woolworths.co.nz"
-WOOLWORTHS_STORE_ID = 9109
-WOOLWORTHS_DEFAULT_ADDRESS = "Woolworths Botany"
 WOOLWORTHS_PAGE_SIZE = 48
 WOOLWORTHS_MAX_PAGES = 250
 
@@ -26,6 +24,12 @@ WOOLWORTHS_AUCKLAND_STORES = json.loads(
         encoding="utf-8"
     )
 )
+
+# Fixed Woolworths store for testing
+woolies_store = WOOLWORTHS_AUCKLAND_STORES[0]
+WOOLWORTHS_DEFAULT_ADDRESS = woolies_store["default_address"]
+WOOLWORTHS_STORE_ID = woolies_store["fulfilment_store_id"]
+print(WOOLWORTHS_DEFAULT_ADDRESS, WOOLWORTHS_STORE_ID)
 
 # Used if the department list can't be fetched from the shell API.
 WOOLWORTHS_DEPARTMENTS_FALLBACK = [
@@ -88,6 +92,9 @@ def product_key(p):
 def fetch_product_pages(client, params, label):
     raw_products = []
     seen_product_keys = set()
+    raw_count = 0
+    duplicate_count = 0
+    expected_total = None
     page = 1
 
     while page <= WOOLWORTHS_MAX_PAGES:
@@ -97,15 +104,21 @@ def fetch_product_pages(client, params, label):
         })
         res.raise_for_status()
 
-        page_products = res.json().get("products", {}).get("items", [])
+        products_data = res.json().get("products", {})
+        if expected_total is None:
+            expected_total = products_data.get("totalItems")
+
+        page_products = products_data.get("items", [])
         if not page_products:
             break
 
+        raw_count += len(page_products)
         new_products = []
         for product in page_products:
             key = product_key(product)
 
             if key in seen_product_keys:
+                duplicate_count += 1
                 continue
 
             seen_product_keys.add(key)
@@ -115,7 +128,15 @@ def fetch_product_pages(client, params, label):
             break
 
         raw_products.extend(new_products)
-        print(f"Woolworths {label} page {page}: raw={len(page_products)}, new={len(new_products)}, total={len(raw_products)}")
+        print(
+            f"Woolworths {label} page {page}: "
+            f"page_raw={len(page_products)}, "
+            f"new={len(new_products)}, "
+            f"duplicates={duplicate_count}, "
+            f"deduped_total={len(raw_products)}, "
+            f"raw_total={raw_count}, "
+            f"api_expected={expected_total}"
+        )
 
         page += 1
 
@@ -219,14 +240,33 @@ def scrape_all_woolworths(store_id=WOOLWORTHS_STORE_ID, address=WOOLWORTHS_DEFAU
                     "inStockProductsOnly": "false",
                     "sort": "PriceAsc",
                 }, label=slug)
+                products_with_price = [
+                    product
+                    for product in raw_products
+                    if get_price(product) is not None
+                ]
+
+                print(
+                    f"Woolworths {department_label}: "
+                    f"deduped_raw={len(raw_products)}, "
+                    f"with_price={len(products_with_price)}, "
+                    f"without_price={len(raw_products) - len(products_with_price)}"
+                )
 
                 all_products.extend(
                     normalize_product(p, store_id, address, department=department_label)
-                    for p in raw_products
-                    if get_price(p) is not None
+                    for p in products_with_price
                 )
 
-            return dedupe_products(all_products)
+            deduped_products = dedupe_products(all_products)
+            print(
+                f"Woolworths final: "
+                f"normalized={len(all_products)}, "
+                f"deduped={len(deduped_products)}, "
+                f"removed={len(all_products) - len(deduped_products)}"
+            )
+
+            return deduped_products
     except Exception as e:
         print(f"Woolworths scrape error: {e}")
         return []
