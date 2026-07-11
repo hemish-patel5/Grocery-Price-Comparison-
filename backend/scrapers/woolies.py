@@ -35,15 +35,15 @@ WOOLWORTHS_STORES = json.loads(stores_path.read_text(encoding="utf-8"))
 
 # The stores this scraper runs over: Auckland (West)
 WOOLWORTHS_AUCKLAND_WEST_STORES = [
-  #  "helensville",
-  #  "henderson",
-  #  "hobsonville",
-  #  "kelston",
-  #  "lincoln_road",
-  #  "lynfield",
-  #  "lynnmall",
-  #  "northwest",
-  #  "pt_chevalier",
+    "helensville",
+    "henderson",
+    "hobsonville",
+    "kelston",
+    "lincoln_road",
+    "lynfield",
+    "lynnmall",
+    "northwest",
+    "pt_chevalier",
     "te_atatu_south",
     "westgate",
 ]
