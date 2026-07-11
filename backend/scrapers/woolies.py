@@ -1,5 +1,6 @@
 import httpx
 import json
+import sys
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -378,13 +379,34 @@ if __name__ == "__main__":
     except ImportError:
         from db import upload_products
 
-    store, store_key = get_woolworths_store()
-    products = scrape_all_woolworths(store_key)
+    # scrape every store from the json file, or only the store keys given
+    # on the command line, e.g.: python woolies.py quay_street botany
+    store_keys = sys.argv[1:] or list(WOOLWORTHS_STORES)
 
-    output_path = Path(__file__).resolve().parent.parent / "data" / "woolworths_products.json"
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(products, indent=2), encoding="utf-8")
+    started = time.time()
+    uploaded_counts = {}
+    failed_stores = []
 
-    print(f"Saved {len(products)} products to {output_path}")
+    for position, requested_key in enumerate(store_keys, 1):
+        store, store_key = get_woolworths_store(requested_key)
+        print(f"\n===== [{position}/{len(store_keys)}] {store['address']} ({store_key}) =====")
 
-    upload_products(store_key, store, products)
+        try:
+            products = scrape_all_woolworths(store_key)
+            if not products:
+                raise RuntimeError("scrape returned no products")
+
+            upload_products(store_key, store, products)
+            uploaded_counts[store_key] = len(products)
+        except Exception as e:
+            print(f"STORE FAILED, moving on: {store_key}: {e}")
+            failed_stores.append(store_key)
+
+    elapsed_minutes = (time.time() - started) / 60
+    print(
+        f"\nFinished in {elapsed_minutes:.1f} min: "
+        f"{len(uploaded_counts)}/{len(store_keys)} stores uploaded, "
+        f"{sum(uploaded_counts.values())} products total"
+    )
+    if failed_stores:
+        print(f"Failed stores: {', '.join(failed_stores)}")
