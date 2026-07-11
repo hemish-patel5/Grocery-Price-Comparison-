@@ -98,11 +98,16 @@ const App = () => {
               </div>
 
               <div className="min-w-0 flex-1">
-                <span
-                  className={`inline-flex text-[10px] font-black px-3 py-1 rounded-full tracking-widest mb-2 shadow-sm ${storeColor(p.store)}`}
-                >
-                  {p.store}
-                </span>
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <span
+                    className={`inline-flex text-[10px] font-black px-3 py-1 rounded-full tracking-widest shadow-sm ${storeColor(p.store)}`}
+                  >
+                    {p.store}
+                  </span>
+                  <span className="text-xs font-semibold text-gray-500">
+                    {p.store_address || "Store address unavailable"}
+                  </span>
+                </div>
                 <p className="text-sm font-bold uppercase text-blue-600 truncate">
                   {p.brand || "Unknown brand"}
                 </p>
