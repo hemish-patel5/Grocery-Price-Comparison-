@@ -1,5 +1,6 @@
 import httpx
 import json
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -26,6 +27,7 @@ except ImportError:
 WOOLWORTHS_BASE_URL = "https://www.woolworths.co.nz"
 WOOLWORTHS_PAGE_SIZE = 48
 WOOLWORTHS_MAX_PAGES = 250
+WOOLWORTHS_PAGE_RETRIES = 4
 
 # Every Woolworths store in the Auckland region. The identifiers are kept in
 # JSON so the store list can be updated without editing scraper logic.
@@ -142,6 +144,29 @@ def product_key(p):
     )
 
 
+def fetch_page_with_retries(client, params, label):
+    for attempt in range(1, WOOLWORTHS_PAGE_RETRIES + 1):
+        try:
+            res = client.get(f"{WOOLWORTHS_BASE_URL}/api/v1/products", params=params)
+            res.raise_for_status()
+            return res.json()
+        except httpx.HTTPStatusError as e:
+            # 4xx won't get better on retry; 5xx and 429 might
+            if e.response.status_code < 500 and e.response.status_code != 429:
+                raise
+            error = e
+        except (httpx.TimeoutException, httpx.TransportError) as e:
+            # stalled/dropped connection — retry
+            error = e
+
+        if attempt == WOOLWORTHS_PAGE_RETRIES:
+            raise error
+
+        wait = 2 ** attempt
+        print(f"Woolworths {label} page {params.get('page')}: {type(error).__name__}, retrying in {wait}s (attempt {attempt}/{WOOLWORTHS_PAGE_RETRIES})")
+        time.sleep(wait)
+
+
 def fetch_product_pages(client, params, label):
     raw_products = []
     seen_product_keys = set()
@@ -151,13 +176,12 @@ def fetch_product_pages(client, params, label):
     page = 1
 
     while page <= WOOLWORTHS_MAX_PAGES:
-        res = client.get(f"{WOOLWORTHS_BASE_URL}/api/v1/products", params={
+        body = fetch_page_with_retries(client, {
             **params,
             "page": page,
-        })
-        res.raise_for_status()
+        }, label)
 
-        products_data = res.json().get("products", {})
+        products_data = body.get("products", {})
         if expected_total is None:
             expected_total = products_data.get("totalItems")
 
@@ -295,14 +319,20 @@ def scrape_all_woolworths(store_key=WOOLWORTHS_DEFAULT_STORE_KEY):
             print(f"Scraping {len(departments)} departments: {', '.join(slug for slug, _ in departments)}")
 
             all_products = []
+            failed_departments = []
             for slug, department_label in departments:
-                raw_products = fetch_product_pages(client, {
-                    "target": "browse",
-                    "dasFilter": f"Department;;{slug};false",
-                    "size": WOOLWORTHS_PAGE_SIZE,
-                    "inStockProductsOnly": "false",
-                    "sort": "PriceAsc",
-                }, label=slug)
+                try:
+                    raw_products = fetch_product_pages(client, {
+                        "target": "browse",
+                        "dasFilter": f"Department;;{slug};false",
+                        "size": WOOLWORTHS_PAGE_SIZE,
+                        "inStockProductsOnly": "false",
+                        "sort": "PriceAsc",
+                    }, label=slug)
+                except Exception as e:
+                    print(f"Woolworths {slug} FAILED after retries, skipping department: {e}")
+                    failed_departments.append(slug)
+                    continue
                 products_with_price = [
                     product
                     for product in raw_products
@@ -333,6 +363,8 @@ def scrape_all_woolworths(store_key=WOOLWORTHS_DEFAULT_STORE_KEY):
                 f"deduped={len(deduped_products)}, "
                 f"removed={len(all_products) - len(deduped_products)}"
             )
+            if failed_departments:
+                print(f"WARNING: {len(failed_departments)} departments failed and are missing: {', '.join(failed_departments)}")
 
             return deduped_products
     except Exception as e:
@@ -341,10 +373,18 @@ def scrape_all_woolworths(store_key=WOOLWORTHS_DEFAULT_STORE_KEY):
 
 
 if __name__ == "__main__":
-    products = scrape_all_woolworths()
+    try:
+        from .db import upload_products
+    except ImportError:
+        from db import upload_products
+
+    store, store_key = get_woolworths_store()
+    products = scrape_all_woolworths(store_key)
 
     output_path = Path(__file__).resolve().parent.parent / "data" / "woolworths_products.json"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(products, indent=2), encoding="utf-8")
 
     print(f"Saved {len(products)} products to {output_path}")
+
+    upload_products(store_key, store, products)
