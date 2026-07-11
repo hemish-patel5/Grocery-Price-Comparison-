@@ -1,4 +1,3 @@
-/* pip install flask flask-cors httpx */
 import { useState } from "react";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
@@ -32,17 +31,17 @@ const App = () => {
   };
 
   return (
-    <div className="font-er min-h-screen bg-blue-50 flex flex-col items-center p-8 text-gray-900">
-      <h1 className="text-5xl font-black mb-10 text-blue-600 tracking-tighter">
-        Grocery Price Comparison
+    <div className="font-er min-h-screen bg-blue-50 flex flex-col items-center px-4 py-6 sm:p-8 text-gray-900">
+      <h1 className="text-4xl sm:text-5xl font-black mb-6 sm:mb-10 text-blue-600 tracking-tighter">
+        Grocerybook
       </h1>
 
       {/* --- ROUNDED SEARCH BAR CONTAINER --- */}
       <div className="relative w-full max-w-xl group">
         <input
-          type="text"
+          type="search"
           placeholder="Search for a product..."
-          className="w-full py-6 pl-8 pr-20 text-xl rounded-full border-2 border-white bg-white focus:outline-none focus:border-blue-400  focus:ring-blue-100 transition-all placeholder:text-gray-400"
+          className="w-full py-4 pl-6 pr-16 text-base sm:py-6 sm:pl-8 sm:pr-20 sm:text-xl rounded-full border-2 border-white bg-white focus:outline-none focus:border-blue-400 focus:ring-blue-100 transition-all placeholder:text-gray-400"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSearch()}
@@ -51,11 +50,12 @@ const App = () => {
         {/* --- MAGNIFYING GLASS BUTTON --- */}
         <button
           onClick={handleSearch}
-          className="absolute right-3 top-1/2 -translate-y-1/2 p-4 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors shadow-lg active:scale-95"
+          aria-label="Search"
+          className="absolute right-2 sm:right-3 top-1/2 -translate-y-1/2 p-3 sm:p-4 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors shadow-lg active:scale-95"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
-            className="h-6 w-6"
+            className="h-5 w-5 sm:h-6 sm:w-6"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -71,62 +71,62 @@ const App = () => {
       </div>
 
       {/* --- RESULTS SECTION --- */}
-      <div className="w-full max-w-3xl mt-12">
+      <div className="w-full max-w-3xl mt-8 sm:mt-12">
         {hasSearched && products.length === 0 && (
           <p className="text-center text-gray-500 font-semibold">No products found.</p>
         )}
 
-        <ul className="grid gap-4 w-full">
+        <ul className="grid gap-3 sm:gap-4 w-full">
           {products.map((p, i) => (
             <li
               key={p.product_id || i}
-              className="group bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex gap-5 items-center hover:shadow-md hover:border-blue-200 transition-all"
+              className="group bg-white p-3 sm:p-5 rounded-2xl shadow-sm border border-gray-100 flex gap-3 sm:gap-5 items-center hover:shadow-md hover:border-blue-200 transition-all"
             >
-              <div className="h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-gray-100 border border-gray-100">
+              <div className="h-16 w-16 sm:h-24 sm:w-24 shrink-0 overflow-hidden rounded-xl bg-gray-100 border border-gray-100">
                 {p.image_url ? (
                   <img
                     src={p.image_url}
                     alt={p.name}
-                    className="h-full w-full object-contain p-2"
+                    className="h-full w-full object-contain p-1.5 sm:p-2"
                     loading="lazy"
                   />
                 ) : (
-                  <div className="h-full w-full flex items-center justify-center text-xs font-bold uppercase text-gray-400">
+                  <div className="h-full w-full flex items-center justify-center text-[10px] sm:text-xs font-bold uppercase text-gray-400">
                     No image
                   </div>
                 )}
               </div>
 
               <div className="min-w-0 flex-1">
-                <div className="mb-2 flex flex-wrap items-center gap-2">
+                <div className="mb-1.5 sm:mb-2 flex flex-wrap items-center gap-1.5 sm:gap-2">
                   <span
-                    className={`inline-flex text-[10px] font-black px-3 py-1 rounded-full tracking-widest shadow-sm ${storeColor(p.store)}`}
+                    className={`inline-flex text-[10px] font-black px-2.5 sm:px-3 py-1 rounded-full tracking-widest shadow-sm ${storeColor(p.store)}`}
                   >
                     {p.store}
                   </span>
-                  <span className="text-xs font-semibold text-gray-500">
+                  <span className="text-[11px] sm:text-xs font-semibold text-gray-500 truncate">
                     {p.store_address || "Store address unavailable"}
                   </span>
                 </div>
-                <p className="text-sm font-bold uppercase text-blue-600 truncate">
+                <p className="text-xs sm:text-sm font-bold uppercase text-blue-600 truncate">
                   {p.brand || "Unknown brand"}
                 </p>
-                <h2 className="text-lg font-semibold text-gray-800 group-hover:text-blue-900 transition-colors leading-tight">
+                <h2 className="text-sm sm:text-lg font-semibold text-gray-800 group-hover:text-blue-900 transition-colors leading-tight">
                   {p.name}
                 </h2>
               </div>
 
-              <div className="flex min-w-28 flex-col items-end gap-1 text-right">
-                <span className="text-xs font-bold uppercase text-gray-400">
+              <div className="flex min-w-16 sm:min-w-28 flex-col items-end gap-0.5 sm:gap-1 text-right shrink-0">
+                <span className="text-[10px] sm:text-xs font-bold uppercase text-gray-400">
                   Price
                 </span>
-                <strong className="text-2xl font-black tracking-tight text-gray-900">
+                <strong className="text-lg sm:text-2xl font-black tracking-tight text-gray-900">
                   {formatPrice(p.original_price)}
                 </strong>
-                <span className="text-xs font-bold uppercase text-gray-400 mt-2">
+                <span className="text-[10px] sm:text-xs font-bold uppercase text-gray-400 mt-1 sm:mt-2">
                   Sale price
                 </span>
-                <strong className="text-lg font-black tracking-tight text-blue-600">
+                <strong className="text-base sm:text-lg font-black tracking-tight text-blue-600">
                   {formatPrice(p.sale_price)}
                 </strong>
               </div>
