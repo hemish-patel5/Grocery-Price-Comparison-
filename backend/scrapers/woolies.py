@@ -91,16 +91,6 @@ def woolworths_client(store):
         yield client
 
 
-def woolworths_product_url(product_id, slug):
-    if not product_id:
-        return None
-
-    if slug:
-        return f"{WOOLWORTHS_BASE_URL}/shop/productdetails/{product_id}/{slug}"
-
-    return f"{WOOLWORTHS_BASE_URL}/shop/productdetails/{product_id}"
-
-
 def get_price(p):
     price = p.get("price", {})
     return price.get("salePrice") or price.get("originalPrice")
@@ -191,7 +181,20 @@ def fetch_product_pages(client, params, label):
     return raw_products
 
 
-def normalize_product(p, store, store_key, department=None):
+def fetch_das_facets(client, params, label, group):
+    body = fetch_page_with_retries(client, {
+        **params,
+        "page": 1,
+    }, label)
+
+    return [
+        facet
+        for facet in body.get("dasFacets", [])
+        if facet.get("group") == group and facet.get("value") and facet.get("name")
+    ]
+
+
+def normalize_product(p, store, store_key, department=None, aisle=None):
     price = p.get("price", {})
     size = p.get("size", {})
     store_id = store["fulfilmentStoreId"]
@@ -203,19 +206,12 @@ def normalize_product(p, store, store_key, department=None):
         ("id",),
         ("barcode",),
     ])
-    product_path = first_value(p, [
-        ("url",),
-        ("productUrl",),
-        ("productURL",),
-        ("slug",),
-    ])
 
     return {
         "name": p.get("name", "Unknown"),
         "price": format_price(get_price(p)),
         "original_price": format_price(price.get("originalPrice")),
         "sale_price": format_price(price.get("salePrice")),
-        "save_price": format_price(price.get("savePrice")),
         "store": "Woolworths",
         "product_id": product_id,
         "brand": first_value(p, [
@@ -234,21 +230,15 @@ def normalize_product(p, store, store_key, department=None):
             size.get("cupMeasure"),
         ),
         "image_url": get_path(p, ("images", "big")),
-        "product_url": woolworths_product_url(product_id, product_path),
-        "is_on_special": bool(price.get("isSpecial")),
         "source_store_key": store_key,
         "source_store_id": str(store_id),
         "source_store_address": store["address"],
         "source_area_id": store.get("areaId"),
         "source_pickup_address_id": store.get("pickupAddressId"),
-        "barcode": p.get("barcode"),
-        "variety": p.get("variety"),
-        "unit": p.get("unit"),
         "department": first_value(p, [
             ("departments", 0, "name"),
         ]) or department,
-        "availability": p.get("availabilityStatus"),
-        "stock_level": p.get("stockLevel"),
+        "aisle": aisle,
     }
 
 
@@ -285,37 +275,104 @@ def scrape_store(store_key):
 
         all_products = []
         failed_departments = []
+        failed_aisles = []
         for slug, department_label in departments:
+            department_params = {
+                "target": "browse",
+                "dasFilter": f"Department;;{slug};false",
+                "size": WOOLWORTHS_PAGE_SIZE,
+                "inStockProductsOnly": "false",
+                "sort": "PriceAsc",
+            }
+
             try:
-                raw_products = fetch_product_pages(client, {
+                aisle_facets = fetch_das_facets(
+                    client,
+                    department_params,
+                    label=slug,
+                    group="Aisle",
+                )
+            except Exception as e:
+                print(f"Woolworths {slug} aisle list error, scraping department only: {e}")
+                aisle_facets = []
+
+            if not aisle_facets:
+                try:
+                    raw_products = fetch_product_pages(client, department_params, label=slug)
+                except Exception as e:
+                    print(f"Woolworths {slug} FAILED after retries, skipping department: {e}")
+                    failed_departments.append(slug)
+                    continue
+
+                products_with_price = [
+                    product
+                    for product in raw_products
+                    if get_price(product) is not None
+                ]
+
+                print(
+                    f"Woolworths {department_label}: "
+                    f"deduped_raw={len(raw_products)}, "
+                    f"with_price={len(products_with_price)}, "
+                    f"without_price={len(raw_products) - len(products_with_price)}"
+                )
+
+                all_products.extend(
+                    normalize_product(p, store, store_key, department=department_label)
+                    for p in products_with_price
+                )
+                continue
+
+            print(
+                f"Woolworths {department_label}: scraping {len(aisle_facets)} aisles: "
+                f"{', '.join(facet['name'] for facet in aisle_facets)}"
+            )
+
+            for aisle in aisle_facets:
+                aisle_label = aisle["name"]
+                aisle_value = aisle["value"]
+                aisle_params = {
                     "target": "browse",
-                    "dasFilter": f"Department;;{slug};false",
+                    "dasFilter": f"Aisle;;{aisle_value};false",
                     "size": WOOLWORTHS_PAGE_SIZE,
                     "inStockProductsOnly": "false",
                     "sort": "PriceAsc",
-                }, label=slug)
-            except Exception as e:
-                print(f"Woolworths {slug} FAILED after retries, skipping department: {e}")
-                failed_departments.append(slug)
-                continue
+                }
 
-            products_with_price = [
-                product
-                for product in raw_products
-                if get_price(product) is not None
-            ]
+                try:
+                    raw_products = fetch_product_pages(
+                        client,
+                        aisle_params,
+                        label=f"{slug}/{aisle_label}",
+                    )
+                except Exception as e:
+                    print(f"Woolworths {slug}/{aisle_label} FAILED after retries, skipping aisle: {e}")
+                    failed_aisles.append(f"{department_label}/{aisle_label}")
+                    continue
 
-            print(
-                f"Woolworths {department_label}: "
-                f"deduped_raw={len(raw_products)}, "
-                f"with_price={len(products_with_price)}, "
-                f"without_price={len(raw_products) - len(products_with_price)}"
-            )
+                products_with_price = [
+                    product
+                    for product in raw_products
+                    if get_price(product) is not None
+                ]
 
-            all_products.extend(
-                normalize_product(p, store, store_key, department=department_label)
-                for p in products_with_price
-            )
+                print(
+                    f"Woolworths {department_label}/{aisle_label}: "
+                    f"deduped_raw={len(raw_products)}, "
+                    f"with_price={len(products_with_price)}, "
+                    f"without_price={len(raw_products) - len(products_with_price)}"
+                )
+
+                all_products.extend(
+                    normalize_product(
+                        p,
+                        store,
+                        store_key,
+                        department=department_label,
+                        aisle=aisle_label,
+                    )
+                    for p in products_with_price
+                )
 
         deduped_products = dedupe_products(all_products)
         print(
@@ -326,6 +383,8 @@ def scrape_store(store_key):
         )
         if failed_departments:
             print(f"WARNING: {len(failed_departments)} departments failed and are missing: {', '.join(failed_departments)}")
+        if failed_aisles:
+            print(f"WARNING: {len(failed_aisles)} aisles failed and are missing: {', '.join(failed_aisles)}")
 
         return deduped_products
 

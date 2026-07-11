@@ -26,8 +26,8 @@ def search():
         client.table("products")
         .select(
             "product_id, name, brand, price, original_price, sale_price, "
-            "is_on_special, size, unit_price, department, barcode, "
-            "image_url, product_url, stores(store_key, address)"
+            "size, unit_price, department, aisle, image_url, "
+            "stores(store_key, address)"
         )
         .ilike("name", f"%{query}%")
         .order("price")

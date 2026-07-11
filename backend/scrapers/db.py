@@ -47,38 +47,21 @@ def to_number(value):
         return None
 
 
-def to_int(value):
-    if value in (None, ""):
-        return None
-
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def product_row(product, store_id, scraped_at):
     return {
         "scraped_at": scraped_at,
         "store_id": store_id,
         "product_id": str(product["product_id"]),
         "name": product["name"],
-        "brand": product["brand"],
-        "price": to_number(product["price"]),
-        "original_price": to_number(product["original_price"]),
-        "sale_price": to_number(product["sale_price"]),
-        "save_price": to_number(product["save_price"]),
-        "is_on_special": bool(product["is_on_special"]),
-        "size": product["size"],
-        "unit": product["unit"],
-        "unit_price": product["unit_price"],
-        "barcode": product["barcode"],
-        "variety": product["variety"],
-        "department": product["department"],
-        "availability": product["availability"],
-        "stock_level": to_int(product["stock_level"]),
-        "image_url": product["image_url"],
-        "product_url": product["product_url"],
+        "brand": product.get("brand"),
+        "price": to_number(product.get("price")),
+        "original_price": to_number(product.get("original_price")),
+        "sale_price": to_number(product.get("sale_price")),
+        "size": product.get("size"),
+        "unit_price": product.get("unit_price"),
+        "department": product.get("department"),
+        "aisle": product.get("aisle"),
+        "image_url": product.get("image_url"),
     }
 
 
