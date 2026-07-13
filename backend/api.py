@@ -26,41 +26,44 @@ def healthz():
 @app.route("/api/search")
 def search():
     query = request.args.get("q", "").strip()
-    if not query:
+
+    # match each word separately so 'free range eggs' finds names with the
+    # words in any order; strip a trailing 's' so 'eggs' also matches 'egg'.
+    # words contain only [a-z0-9&'], so they can't break the or() syntax
+    terms = re.findall(r"[a-z0-9&']+", query.lower())
+    stems = list(dict.fromkeys(
+        t[:-1] if len(t) > 3 and t.endswith("s") else t for t in terms
+    ))
+    if not stems:
         return jsonify([])
 
-    # commas/parens would break the PostgREST or() filter syntax
-    safe_query = re.sub(r"[(),]", " ", query).strip()
-
     client = get_client()
-    result = (
-        client.table("products")
-        .select(
-            "product_id, name, brand, price, original_price, sale_price, "
-            "size, unit_price, department, aisle, image_url, "
-            "stores(store_key, address)"
-        )
-        # match the product name OR its aisle label, so searching 'eggs'
-        # also finds everything shelved in the Eggs aisle
-        .or_(f"name.ilike.%{safe_query}%,aisle.ilike.%{safe_query}%")
-        .order("price")
-        .limit(SEARCH_FETCH_LIMIT)
-        .execute()
+    db_query = client.table("products").select(
+        "product_id, name, brand, price, original_price, sale_price, "
+        "size, unit_price, department, aisle, image_url, "
+        "stores(store_key, address)"
     )
+    # chained or_() filters are ANDed by PostgREST: every query word must
+    # appear somewhere in the product's name, brand, size, or aisle label
+    for stem in stems:
+        db_query = db_query.or_(
+            f"name.ilike.%{stem}%,brand.ilike.%{stem}%,"
+            f"size.ilike.%{stem}%,aisle.ilike.%{stem}%"
+        )
+    result = db_query.order("price").limit(SEARCH_FETCH_LIMIT).execute()
 
-    query_words = words(query)
-
-    def relevance_tier(row):
-        """0 = query matches the product's name AND its aisle label (real
-        eggs in the 'Eggs, Butter & Spreads' aisle), 1 = one of the two
-        (margarine in that aisle, or a chocolate 'egg' by name), 2 = rest."""
-        name_hit = bool(query_words & words(f"{row.get('name')} {row.get('brand')}"))
-        aisle_hit = bool(query_words & words(row.get("aisle")))
-        if name_hit and aisle_hit:
-            return 0
-        if name_hit or aisle_hit:
-            return 1
-        return 2
+    def sort_key(row):
+        name_words = words(f"{row.get('name')} {row.get('brand')}")
+        aisle_words = words(row.get("aisle"))
+        name_hit = any(s in name_words for s in stems)
+        aisle_hit = any(s in aisle_words for s in stems)
+        # products named after the query come first, then products merely
+        # shelved in a matching aisle (margarine in the Eggs aisle), then
+        # substring-only matches ('egg' inside 'eggplant'); cheapest first
+        # within each group, matching aisle breaking price ties
+        group = 0 if name_hit else 1 if aisle_hit else 2
+        price = row["price"] if row["price"] is not None else float("inf")
+        return (group, price, not aisle_hit)
 
     # The same product is stored once per scraped store. Rows arrive sorted
     # cheapest-first, so keeping the first row per product keeps its
@@ -73,11 +76,7 @@ def search():
         seen_product_ids.add(row["product_id"])
         deduped.append(row)
 
-    # most relevant tier first, cheapest first within each tier
-    deduped.sort(key=lambda row: (
-        relevance_tier(row),
-        row["price"] if row["price"] is not None else float("inf"),
-    ))
+    deduped.sort(key=sort_key)
 
     products = []
     for row in deduped[:SEARCH_RESULT_LIMIT]:

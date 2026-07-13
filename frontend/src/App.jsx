@@ -118,17 +118,21 @@ const App = () => {
 
               <div className="flex min-w-16 sm:min-w-28 flex-col items-end gap-0.5 sm:gap-1 text-right shrink-0">
                 <span className="text-[10px] sm:text-xs font-bold uppercase text-gray-400">
-                  Price
+                  {p.sale_price != null ? "Sale price" : "Price"}
                 </span>
-                <strong className="text-lg sm:text-2xl font-black tracking-tight text-gray-900">
-                  {formatPrice(p.original_price)}
+                <strong
+                  className={`text-lg sm:text-2xl font-black tracking-tight ${
+                    p.sale_price != null ? "text-blue-600" : "text-gray-900"
+                  }`}
+                >
+                  {formatPrice(p.price)}
                 </strong>
-                <span className="text-[10px] sm:text-xs font-bold uppercase text-gray-400 mt-1 sm:mt-2">
-                  Sale price
-                </span>
-                <strong className="text-base sm:text-lg font-black tracking-tight text-blue-600">
-                  {formatPrice(p.sale_price)}
-                </strong>
+                {p.sale_price != null &&
+                  Number(p.original_price) > Number(p.sale_price) && (
+                    <span className="text-[11px] sm:text-sm font-semibold text-gray-400 line-through">
+                      was {formatPrice(p.original_price)}
+                    </span>
+                  )}
               </div>
             </li>
           ))}
