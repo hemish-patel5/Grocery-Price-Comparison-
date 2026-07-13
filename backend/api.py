@@ -57,13 +57,21 @@ def search():
         aisle_words = words(row.get("aisle"))
         name_hit = any(s in name_words for s in stems)
         aisle_hit = any(s in aisle_words for s in stems)
-        # products named after the query come first, then products merely
-        # shelved in a matching aisle (margarine in the Eggs aisle), then
-        # substring-only matches ('egg' inside 'eggplant'); cheapest first
-        # within each group, matching aisle breaking price ties
-        group = 0 if name_hit else 1 if aisle_hit else 2
+        # relevance first: products whose name AND aisle both match (real
+        # milk in the Milk aisle), then name-only matches (m&m 'milk'
+        # chocolate), then aisle-only matches (cream in the Milk aisle),
+        # then substring-only matches ('egg' inside 'eggplant');
+        # cheapest first within each group
+        if name_hit and aisle_hit:
+            group = 0
+        elif name_hit:
+            group = 1
+        elif aisle_hit:
+            group = 2
+        else:
+            group = 3
         price = row["price"] if row["price"] is not None else float("inf")
-        return (group, price, not aisle_hit)
+        return (group, price)
 
     # The same product is stored once per scraped store. Rows arrive sorted
     # cheapest-first, so keeping the first row per product keeps its
