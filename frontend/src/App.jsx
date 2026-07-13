@@ -114,6 +114,11 @@ const App = () => {
                 <h2 className="text-sm sm:text-lg font-semibold text-gray-800 group-hover:text-blue-900 transition-colors leading-tight">
                   {p.name}
                 </h2>
+                {p.size && (
+                  <p className="text-[11px] sm:text-xs font-semibold text-gray-500 mt-0.5">
+                    {p.size}
+                  </p>
+                )}
               </div>
 
               <div className="flex min-w-16 sm:min-w-28 flex-col items-end gap-0.5 sm:gap-1 text-right shrink-0">
