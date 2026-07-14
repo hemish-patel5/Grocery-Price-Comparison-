@@ -111,7 +111,7 @@ const App = () => {
                 <p className="text-xs sm:text-sm font-bold uppercase text-blue-600 truncate">
                   {p.brand || "Unknown brand"}
                 </p>
-                <h2 className="text-sm sm:text-lg font-semibold text-gray-800 group-hover:text-blue-900 transition-colors leading-tight">
+                <h2 className="text-sm sm:text-lg font-semibold text-gray-800 group-hover:text-blue-900 transition-colors leading-tight capitalize">
                   {p.name}
                 </h2>
                 {p.size && (
@@ -123,7 +123,7 @@ const App = () => {
 
               <div className="flex min-w-16 sm:min-w-28 flex-col items-end gap-0.5 sm:gap-1 text-right shrink-0">
                 <span className="text-[10px] sm:text-xs font-bold uppercase text-gray-400">
-                  {p.sale_price != null ? "Sale price" : "Price"}
+                  {p.sale_price != null ? "Price" : "Price"}
                 </span>
                 <strong
                   className={`text-lg sm:text-2xl font-black tracking-tight ${

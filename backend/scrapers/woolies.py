@@ -11,6 +11,7 @@ from .utils import (
     format_price,
     format_unit_price,
     dedupe_products,
+    strip_brand_prefix,
 )
 
 
@@ -215,18 +216,20 @@ def normalize_product(p, store, store_key, department=None, aisle=None):
         ("barcode",),
     ])
 
+    brand = first_value(p, [
+        ("brand",),
+        ("brandName",),
+        ("manufacturer",),
+    ])
+
     return {
-        "name": p.get("name", "Unknown"),
+        "name": strip_brand_prefix(p.get("name", "Unknown"), brand),
         "price": format_price(get_price(p)),
         "original_price": format_price(price.get("originalPrice")),
         "sale_price": format_price(price.get("salePrice")),
         "store": "Woolworths",
         "product_id": product_id,
-        "brand": first_value(p, [
-            ("brand",),
-            ("brandName",),
-            ("manufacturer",),
-        ]),
+        "brand": brand,
         "size": first_value(p, [
             ("size", "volumeSize"),
             ("size", "cupMeasure"),

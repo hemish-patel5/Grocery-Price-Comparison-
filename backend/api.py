@@ -30,7 +30,6 @@ def search():
         return jsonify([])
 
     # matching, relevance ranking, cheapest-store lookup and deduping all
-    # happen in Postgres (see backend/sql/normalize_schema.sql)
     result = get_client().rpc("search_products", {
         "p_stems": stems,
         "p_limit": SEARCH_RESULT_LIMIT,

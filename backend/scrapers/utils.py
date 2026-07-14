@@ -26,6 +26,19 @@ def first_value(data, paths):
     return None
 
 
+def strip_brand_prefix(name, brand):
+    """Retailer product names repeat the brand as a prefix ('anchor calci
+    yum...' with brand 'anchor'); the brand is stored separately, so keep
+    only the descriptive part. Only strips at a word boundary (brand 'chef'
+    must not eat into 'chefs choice') and falls back to the full name if
+    stripping would leave nothing."""
+    if name and brand and name.lower().startswith(brand.lower()):
+        rest = name[len(brand):]
+        if rest[:1] in ("", " "):
+            return rest.lstrip() or name
+    return name
+
+
 def format_price(value):
     if value is None:
         return None
