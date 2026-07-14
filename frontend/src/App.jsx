@@ -65,19 +65,24 @@ const App = () => {
   const [query, setQuery] = useState("");
   const [products, setProducts] = useState([]);
   const [hasSearched, setHasSearched] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [expanded, setExpanded] = useState({});
   const [storePrices, setStorePrices] = useState({});
 
   const handleSearch = async () => {
     try {
       setHasSearched(true);
+      setIsLoading(true);
       setExpanded({});
       setStorePrices({});
+      setProducts([]);
       const res = await fetch(`${API_BASE_URL}/api/search?q=${encodeURIComponent(query)}`);
       const data = await res.json();
       setProducts(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Search failed", error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -140,7 +145,12 @@ const App = () => {
 
       {/* --- RESULTS SECTION --- */}
       <div className="w-full max-w-3xl mt-8 sm:mt-12">
-        {hasSearched && products.length === 0 && (
+        {isLoading && (
+          <p className="text-center text-gray-500 font-semibold animate-pulse">
+            Loading...
+          </p>
+        )}
+        {hasSearched && !isLoading && products.length === 0 && (
           <p className="text-center text-gray-500 font-semibold">No products found.</p>
         )}
 
