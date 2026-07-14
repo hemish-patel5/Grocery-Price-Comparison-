@@ -2,14 +2,77 @@ import { useState } from "react";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
+const storeColor = (store) => {
+  if (store === "PAK'nSAVE") return "text-black bg-yellow-300";
+  if (store === "New World") return "text-white bg-red-500 ";
+  return "text-white bg-green-600";
+};
+
+const formatPrice = (value) => {
+  if (value === null || value === undefined || value === "") return "N/A";
+  const number = Number(value);
+  return Number.isNaN(number) ? value : `$${number.toFixed(2)}`;
+};
+
+const PriceBlock = ({ item, compact }) => (
+  <div className="flex min-w-16 sm:min-w-28 flex-col items-end gap-0.5 sm:gap-1 text-right shrink-0">
+    <span className="text-[10px] sm:text-xs font-bold uppercase text-gray-400">
+      Price
+    </span>
+    <strong
+      className={`${compact ? "text-base sm:text-xl" : "text-lg sm:text-2xl"} font-black tracking-tight ${
+        item.sale_price != null ? "text-blue-600" : "text-gray-900"
+      }`}
+    >
+      {formatPrice(item.price)}
+    </strong>
+    {item.sale_price != null &&
+      Number(item.original_price) > Number(item.sale_price) && (
+        <span className="text-[11px] sm:text-sm font-semibold text-gray-400 line-through">
+          was {formatPrice(item.original_price)}
+        </span>
+      )}
+  </div>
+);
+
+const ProductInfo = ({ item }) => (
+  <div className="min-w-0 flex-1">
+    <div className="mb-1.5 sm:mb-2 flex flex-wrap items-center gap-1.5 sm:gap-2">
+      <span
+        className={`inline-flex text-[10px] font-black px-2.5 sm:px-3 py-1 rounded-full tracking-widest shadow-sm ${storeColor(item.store)}`}
+      >
+        {item.store}
+      </span>
+      <span className="text-[11px] sm:text-xs font-semibold text-gray-500 truncate">
+        {item.store_address || "Store address unavailable"}
+      </span>
+    </div>
+    <p className="text-xs sm:text-sm font-bold uppercase text-blue-600 truncate">
+      {item.brand || "Unknown brand"}
+    </p>
+    <h2 className="text-sm sm:text-lg font-semibold text-gray-800 group-hover:text-blue-900 transition-colors leading-tight capitalize">
+      {item.name}
+    </h2>
+    {item.size && (
+      <p className="text-[11px] sm:text-xs font-semibold text-gray-500 mt-0.5">
+        {item.size}
+      </p>
+    )}
+  </div>
+);
+
 const App = () => {
   const [query, setQuery] = useState("");
   const [products, setProducts] = useState([]);
   const [hasSearched, setHasSearched] = useState(false);
+  const [expanded, setExpanded] = useState({});
+  const [storePrices, setStorePrices] = useState({});
 
   const handleSearch = async () => {
     try {
       setHasSearched(true);
+      setExpanded({});
+      setStorePrices({});
       const res = await fetch(`${API_BASE_URL}/api/search?q=${encodeURIComponent(query)}`);
       const data = await res.json();
       setProducts(Array.isArray(data) ? data : []);
@@ -18,16 +81,21 @@ const App = () => {
     }
   };
 
-  const storeColor = (store) => {
-    if (store === "PAK'nSAVE") return "text-black bg-yellow-300";
-    if (store === "New World") return "text-white bg-red-500 ";
-    return "text-white bg-green-600";
-  };
-
-  const formatPrice = (value) => {
-    if (value === null || value === undefined || value === "") return "N/A";
-    const number = Number(value);
-    return Number.isNaN(number) ? value : `$${number.toFixed(2)}`;
+  const toggleStores = async (productId) => {
+    setExpanded((prev) => ({ ...prev, [productId]: !prev[productId] }));
+    if (storePrices[productId]) return;
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/product/${encodeURIComponent(productId)}/prices`
+      );
+      const data = await res.json();
+      setStorePrices((prev) => ({
+        ...prev,
+        [productId]: Array.isArray(data) ? data : [],
+      }));
+    } catch (error) {
+      console.error("Store prices failed", error);
+    }
   };
 
   return (
@@ -80,65 +148,64 @@ const App = () => {
           {products.map((p, i) => (
             <li
               key={p.product_id || i}
-              className="group bg-white p-3 sm:p-5 rounded-2xl shadow-sm border border-gray-100 flex gap-3 sm:gap-5 items-center hover:shadow-md hover:border-blue-200 transition-all"
+              className="group bg-white p-3 sm:p-5 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md hover:border-blue-200 transition-all"
             >
-              <div className="h-16 w-16 sm:h-24 sm:w-24 shrink-0 overflow-hidden rounded-xl bg-gray-100 border border-gray-100">
-                {p.image_url ? (
-                  <img
-                    src={p.image_url}
-                    alt={p.name}
-                    className="h-full w-full object-contain p-1.5 sm:p-2"
-                    loading="lazy"
-                  />
-                ) : (
-                  <div className="h-full w-full flex items-center justify-center text-[10px] sm:text-xs font-bold uppercase text-gray-400">
-                    No image
-                  </div>
-                )}
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <div className="mb-1.5 sm:mb-2 flex flex-wrap items-center gap-1.5 sm:gap-2">
-                  <span
-                    className={`inline-flex text-[10px] font-black px-2.5 sm:px-3 py-1 rounded-full tracking-widest shadow-sm ${storeColor(p.store)}`}
-                  >
-                    {p.store}
-                  </span>
-                  <span className="text-[11px] sm:text-xs font-semibold text-gray-500 truncate">
-                    {p.store_address || "Store address unavailable"}
-                  </span>
-                </div>
-                <p className="text-xs sm:text-sm font-bold uppercase text-blue-600 truncate">
-                  {p.brand || "Unknown brand"}
-                </p>
-                <h2 className="text-sm sm:text-lg font-semibold text-gray-800 group-hover:text-blue-900 transition-colors leading-tight capitalize">
-                  {p.name}
-                </h2>
-                {p.size && (
-                  <p className="text-[11px] sm:text-xs font-semibold text-gray-500 mt-0.5">
-                    {p.size}
-                  </p>
-                )}
-              </div>
-
-              <div className="flex min-w-16 sm:min-w-28 flex-col items-end gap-0.5 sm:gap-1 text-right shrink-0">
-                <span className="text-[10px] sm:text-xs font-bold uppercase text-gray-400">
-                  {p.sale_price != null ? "Price" : "Price"}
-                </span>
-                <strong
-                  className={`text-lg sm:text-2xl font-black tracking-tight ${
-                    p.sale_price != null ? "text-blue-600" : "text-gray-900"
-                  }`}
-                >
-                  {formatPrice(p.price)}
-                </strong>
-                {p.sale_price != null &&
-                  Number(p.original_price) > Number(p.sale_price) && (
-                    <span className="text-[11px] sm:text-sm font-semibold text-gray-400 line-through">
-                      was {formatPrice(p.original_price)}
-                    </span>
+              <div className="flex gap-3 sm:gap-5 items-center">
+                <div className="h-16 w-16 sm:h-24 sm:w-24 shrink-0 overflow-hidden rounded-xl bg-gray-100 border border-gray-100">
+                  {p.image_url ? (
+                    <img
+                      src={p.image_url}
+                      alt={p.name}
+                      className="h-full w-full object-contain p-1.5 sm:p-2"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="h-full w-full flex items-center justify-center text-[10px] sm:text-xs font-bold uppercase text-gray-400">
+                      No image
+                    </div>
                   )}
+                </div>
+
+                <ProductInfo item={p} />
+
+                <PriceBlock item={p} />
               </div>
+
+              {/* --- PER-STORE COMPARISON DROPDOWN --- */}
+              <button
+                onClick={() => toggleStores(p.product_id)}
+                className="mt-2 sm:mt-3 w-full flex items-center justify-center gap-1 text-[11px] sm:text-xs font-bold uppercase tracking-wider text-blue-600 hover:text-blue-800 transition-colors"
+              >
+                {expanded[p.product_id] ? "Hide stores" : "Compare stores"}
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className={`h-3.5 w-3.5 transition-transform ${expanded[p.product_id] ? "rotate-180" : ""}`}
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {expanded[p.product_id] && (
+                <ul className="mt-2 sm:mt-3 grid gap-2 border-t border-gray-100 pt-2 sm:pt-3">
+                  {!storePrices[p.product_id] && (
+                    <li className="text-center text-xs sm:text-sm font-semibold text-gray-400 py-2">
+                      Loading stores...
+                    </li>
+                  )}
+                  {(storePrices[p.product_id] || []).map((sp, j) => (
+                    <li
+                      key={sp.store_key || j}
+                      className="flex gap-3 sm:gap-5 items-center bg-gray-50 rounded-xl border border-gray-100 p-2.5 sm:p-3"
+                    >
+                      <ProductInfo item={{ ...p, ...sp }} />
+                      <PriceBlock item={sp} compact />
+                    </li>
+                  ))}
+                </ul>
+              )}
             </li>
           ))}
         </ul>
