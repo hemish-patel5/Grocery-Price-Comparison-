@@ -11,6 +11,7 @@ from .utils import (
     format_price,
     format_unit_price,
     dedupe_products,
+    strip_brand_prefix,
 )
 
 
@@ -35,16 +36,16 @@ WOOLWORTHS_STORES = json.loads(stores_path.read_text(encoding="utf-8"))
 
 # The stores this scraper runs over: Auckland (West)
 WOOLWORTHS_AUCKLAND_WEST_STORES = [
-    "helensville",
-    "henderson",
-    "hobsonville",
-    "kelston",
-    "lincoln_road",
+    # "helensville",
+    # "henderson",
+    # "hobsonville",
+    # "kelston",
+    # "lincoln_road",
+    # "pt_chevalier",
+    # "te_atatu_south",
+    # "lynnmall",
     "lynfield",
-    "lynnmall",
     "northwest",
-    "pt_chevalier",
-    "te_atatu_south",
     "westgate",
 ]
 
@@ -215,18 +216,20 @@ def normalize_product(p, store, store_key, department=None, aisle=None):
         ("barcode",),
     ])
 
+    brand = first_value(p, [
+        ("brand",),
+        ("brandName",),
+        ("manufacturer",),
+    ])
+
     return {
-        "name": p.get("name", "Unknown"),
+        "name": strip_brand_prefix(p.get("name", "Unknown"), brand),
         "price": format_price(get_price(p)),
         "original_price": format_price(price.get("originalPrice")),
         "sale_price": format_price(price.get("salePrice")),
         "store": "Woolworths",
         "product_id": product_id,
-        "brand": first_value(p, [
-            ("brand",),
-            ("brandName",),
-            ("manufacturer",),
-        ]),
+        "brand": brand,
         "size": first_value(p, [
             ("size", "volumeSize"),
             ("size", "cupMeasure"),

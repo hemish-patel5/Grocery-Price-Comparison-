@@ -8,14 +8,7 @@ from .scrapers.db import get_client
 app = Flask(__name__)
 CORS(app)
 
-SEARCH_FETCH_LIMIT = 1000
 SEARCH_RESULT_LIMIT = 100
-
-
-def words(text):
-    """Lowercase words plus singular forms, so 'eggs' matches 'egg'."""
-    found = set(re.findall(r"[a-z0-9&']+", (text or "").lower()))
-    return found | {w[:-1] for w in found if w.endswith("s")}
 
 
 @app.route("/healthz")
@@ -27,9 +20,8 @@ def healthz():
 def search():
     query = request.args.get("q", "").strip()
 
-    # match each word separately so 'free range eggs' finds names with the
-    # words in any order; strip a trailing 's' so 'eggs' also matches 'egg'.
-    # words contain only [a-z0-9&'], so they can't break the or() syntax
+    # split into words so 'free range eggs' matches names with the words in
+    # any order; strip a trailing 's' so 'eggs' also matches 'egg'
     terms = re.findall(r"[a-z0-9&']+", query.lower())
     stems = list(dict.fromkeys(
         t[:-1] if len(t) > 3 and t.endswith("s") else t for t in terms
@@ -37,68 +29,21 @@ def search():
     if not stems:
         return jsonify([])
 
-    client = get_client()
-    db_query = client.table("products").select(
-        "product_id, name, brand, price, original_price, sale_price, "
-        "size, unit_price, department, aisle, image_url, "
-        "stores(store_key, address)"
-    )
-    # chained or_() filters are ANDed by PostgREST: every query word must
-    # appear somewhere in the product's name, brand, size, or aisle label
-    for stem in stems:
-        db_query = db_query.or_(
-            f"name.ilike.%{stem}%,brand.ilike.%{stem}%,"
-            f"size.ilike.%{stem}%,aisle.ilike.%{stem}%"
-        )
-    result = db_query.order("price").limit(SEARCH_FETCH_LIMIT).execute()
+    # matching, relevance ranking, cheapest-store lookup and deduping all
+    result = get_client().rpc("search_products", {
+        "p_stems": stems,
+        "p_limit": SEARCH_RESULT_LIMIT,
+    }).execute()
 
-    def sort_key(row):
-        name_words = words(f"{row.get('name')} {row.get('brand')}")
-        aisle_words = words(row.get("aisle"))
-        name_hit = any(s in name_words for s in stems)
-        aisle_hit = any(s in aisle_words for s in stems)
-        # relevance first: products whose name AND aisle both match (real
-        # milk in the Milk aisle), then name-only matches (m&m 'milk'
-        # chocolate), then aisle-only matches (cream in the Milk aisle),
-        # then substring-only matches ('egg' inside 'eggplant');
-        # cheapest first within each group
-        if name_hit and aisle_hit:
-            group = 0
-        elif name_hit:
-            group = 1
-        elif aisle_hit:
-            group = 2
-        else:
-            group = 3
-        price = row["price"] if row["price"] is not None else float("inf")
-        return (group, price)
-
-    # The same product is stored once per scraped store. Rows arrive sorted
-    # cheapest-first, so keeping the first row per product keeps its
-    # cheapest store.
-    deduped = []
-    seen_product_ids = set()
-    for row in result.data:
-        if row["product_id"] in seen_product_ids:
-            continue
-        seen_product_ids.add(row["product_id"])
-        deduped.append(row)
-
-    deduped.sort(key=sort_key)
-
-    products = []
-    for row in deduped[:SEARCH_RESULT_LIMIT]:
-        store = row.pop("stores") or {}
-        products.append({
+    return jsonify([
+        {
             **row,
             "store": "Woolworths",
-            "store_key": store.get("store_key"),
-            "store_address": store.get("address"),
             "original_price": f"{row['original_price']:.2f}" if row["original_price"] is not None else None,
             "sale_price": f"{row['sale_price']:.2f}" if row["sale_price"] is not None else None,
-        })
-
-    return jsonify(products)
+        }
+        for row in result.data
+    ])
 
 
 if __name__ == "__main__":
