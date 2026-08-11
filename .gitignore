@@ -19,6 +19,7 @@ backend/.env
 .env
 sql
 backend/data/newworld_*_products.json
+backend/data/newworld_sample_test.json
 .venv
 
 
