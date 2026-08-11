@@ -29,6 +29,9 @@ NEWWORLD_SEARCH_URL = (
     "https://api-prod.newworld.co.nz/v1/edge/search/paginated/products"
 )
 NEWWORLD_TOKEN_URL = f"{NEWWORLD_BASE_URL}/api/user/get-current-user"
+NEWWORLD_IMAGE_BASE_URL = (
+    "https://a.fsimg.co.nz/product/retail/fan/image"
+)
 
 NEWWORLD_HITS_PER_PAGE = 50
 NEWWORLD_MAX_PAGES = 250
@@ -82,6 +85,47 @@ def store_id_from(store):
     if not store_id:
         raise ValueError("New World store metadata is missing storeId")
     return str(store_id)
+
+
+def newworld_image_url(product_id, size=500):
+    """Build the primary FSNI CDN image URL from a retailer product ID.
+
+    Category search results do not include images, while the product-detail
+    endpoint returns this deterministic URL at 100px through 500px. Deriving
+    it here avoids an additional detail request for every scraped product.
+    """
+    if not product_id:
+        return None
+
+    numeric_id = str(product_id).split("-", 1)[0]
+    if not numeric_id.isdigit():
+        return None
+    if size not in {100, 200, 300, 400, 500}:
+        raise ValueError("New World image size must be 100, 200, 300, 400 or 500")
+
+    return f"{NEWWORLD_IMAGE_BASE_URL}/{size}x{size}/{numeric_id}.png"
+
+
+def find_newworld_image_url(product):
+    """Return the largest explicit image, or derive the 500px CDN image."""
+    primary_images = (
+        (product.get("images") or {}).get("primaryImages") or {}
+    )
+    for size in (500, 400, 300, 200, 100):
+        image_url = primary_images.get(f"{size}px")
+        if image_url:
+            return absolute_url(image_url, NEWWORLD_BASE_URL)
+
+    return (
+        absolute_url(find_image_url(product), NEWWORLD_BASE_URL)
+        or newworld_image_url(first_value(product, [
+            ("productId",),
+            ("productID",),
+            ("id",),
+            ("sku",),
+            ("barcode",),
+        ]))
+    )
 
 
 def algolia_quote(value):
@@ -444,6 +488,13 @@ def normalize_newworld_prices(product):
 
 def normalize_newworld_product(product, store, category):
     prices = normalize_newworld_prices(product)
+    product_id = first_value(product, [
+        ("productId",),
+        ("productID",),
+        ("id",),
+        ("sku",),
+        ("barcode",),
+    ])
     product_path = first_value(product, [
         ("url",),
         ("productUrl",),
@@ -456,13 +507,7 @@ def normalize_newworld_product(product, store, category):
         "name": product.get("name") or "Unknown",
         **prices,
         "store": "New World",
-        "product_id": first_value(product, [
-            ("productId",),
-            ("productID",),
-            ("id",),
-            ("sku",),
-            ("barcode",),
-        ]),
+        "product_id": product_id,
         "barcode": first_value(product, [
             ("barcode",),
             ("gtin",),
@@ -480,10 +525,7 @@ def normalize_newworld_product(product, store, category):
             ("displaySize",),
             ("unit",),
         ]),
-        "image_url": absolute_url(
-            find_image_url(product),
-            NEWWORLD_BASE_URL,
-        ),
+        "image_url": find_newworld_image_url(product),
         "product_url": absolute_url(product_path, NEWWORLD_BASE_URL),
         "sale_type": product.get("saleType"),
         "variable_weight": product.get("variableWeight"),
