@@ -18,6 +18,7 @@ __pycache__/
 backend/.env
 .env
 sql
+backend/data/newworld_*_products.json
 
 
 # --- Logs & Debug ---
