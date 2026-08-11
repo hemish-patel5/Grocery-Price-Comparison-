@@ -349,14 +349,101 @@ def comparative_unit_price(single_price):
     return f"{price} / {measure}" if measure else price
 
 
-def normalize_newworld_product(product, store, category):
+def normalize_newworld_prices(product):
+    """Normalize standard, promotional and Clubcard prices.
+
+    New World returns prices in cents. For an ordinary promotion,
+    singlePrice.price is already the discounted price and the previous price
+    is not present. For a Clubcard promotion, singlePrice.price is the regular
+    price and the best promotion's rewardValue is the Clubcard price.
+
+    A rewardValue is only treated as a direct item price for the response shape
+    we have verified: rewardType=NEW_PRICE with threshold=1. Other promotion
+    types are retained as metadata without guessing their per-item price.
+    """
     single_price = product.get("singlePrice") or {}
+    base_price = cents_to_price(single_price.get("price"))
+    base_unit_price = comparative_unit_price(single_price)
     promotions = product.get("promotions") or []
     best_promotion = next(
-        (promotion for promotion in promotions if promotion.get("bestPromotion")),
-        promotions[0] if promotions else None,
+        (
+            promotion
+            for promotion in promotions
+            if promotion.get("bestPromotion") is True
+        ),
+        None,
     )
-    current_price = cents_to_price(single_price.get("price"))
+
+    if best_promotion is None:
+        return {
+            "price": base_price,
+            "original_price": None,
+            "sale_price": None,
+            "unit_price": base_unit_price,
+            "original_unit_price": None,
+            "is_on_special": False,
+            "requires_card": False,
+            "promotion_id": None,
+            "promotion_type": None,
+            "promotion_description": None,
+            "promotion_threshold": None,
+            "promotion_limit": None,
+            "multi_products": False,
+        }
+
+    reward_type = best_promotion.get("rewardType")
+    threshold = best_promotion.get("threshold")
+    reward_price = cents_to_price(best_promotion.get("rewardValue"))
+    requires_card = bool(best_promotion.get("cardDependencyFlag"))
+    is_direct_price = (
+        reward_type == "NEW_PRICE"
+        and threshold == 1
+        and reward_price is not None
+    )
+
+    price = base_price
+    original_price = None
+    sale_price = None
+    unit_price = base_unit_price
+    original_unit_price = None
+
+    if is_direct_price:
+        promotion_unit_price = comparative_unit_price(best_promotion)
+        unit_price = promotion_unit_price or base_unit_price
+
+        if requires_card:
+            price = reward_price
+            original_price = base_price
+            sale_price = reward_price
+            if promotion_unit_price and promotion_unit_price != base_unit_price:
+                original_unit_price = base_unit_price
+        else:
+            # The public promotional price has already replaced
+            # singlePrice.price; its previous price is not in this response.
+            price = base_price or reward_price
+            sale_price = price
+
+    return {
+        "price": price,
+        "original_price": original_price,
+        "sale_price": sale_price,
+        "unit_price": unit_price,
+        "original_unit_price": original_unit_price,
+        "is_on_special": True,
+        "requires_card": requires_card,
+        "promotion_id": (
+            best_promotion.get("promoId") or single_price.get("promoId")
+        ),
+        "promotion_type": reward_type,
+        "promotion_description": best_promotion.get("description"),
+        "promotion_threshold": threshold,
+        "promotion_limit": best_promotion.get("limit"),
+        "multi_products": bool(best_promotion.get("multiProducts")),
+    }
+
+
+def normalize_newworld_product(product, store, category):
+    prices = normalize_newworld_prices(product)
     product_path = first_value(product, [
         ("url",),
         ("productUrl",),
@@ -367,11 +454,7 @@ def normalize_newworld_product(product, store, category):
 
     return {
         "name": product.get("name") or "Unknown",
-        "price": current_price,
-        # This endpoint exposes the effective price and promotion metadata,
-        # but not a dependable pre-promotion price.
-        "original_price": None,
-        "sale_price": current_price if best_promotion else None,
+        **prices,
         "store": "New World",
         "product_id": first_value(product, [
             ("productId",),
@@ -397,19 +480,13 @@ def normalize_newworld_product(product, store, category):
             ("displaySize",),
             ("unit",),
         ]),
-        "unit_price": comparative_unit_price(single_price),
         "image_url": absolute_url(
             find_image_url(product),
             NEWWORLD_BASE_URL,
         ),
         "product_url": absolute_url(product_path, NEWWORLD_BASE_URL),
-        "is_on_special": best_promotion is not None,
-        "promotion_id": (
-            best_promotion.get("promoId")
-            if best_promotion
-            else single_price.get("promoId")
-        ),
         "sale_type": product.get("saleType"),
+        "variable_weight": product.get("variableWeight"),
         "availability": product.get("availability") or [],
         "department": category.get("department"),
         "category": category.get("category"),
