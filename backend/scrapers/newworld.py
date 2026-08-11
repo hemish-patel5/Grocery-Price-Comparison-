@@ -6,13 +6,22 @@ from pathlib import Path
 
 import httpx
 
-from .utils import (
-    absolute_url,
-    dedupe_products,
-    find_image_url,
-    first_value,
-    format_price,
-)
+try:
+    from .utils import (
+        absolute_url,
+        dedupe_products,
+        find_image_url,
+        first_value,
+        format_price,
+    )
+except ImportError:  # Allow `python backend/scrapers/newworld.py` as well.
+    from utils import (
+        absolute_url,
+        dedupe_products,
+        find_image_url,
+        first_value,
+        format_price,
+    )
 
 
 NEWWORLD_BASE_URL = "https://www.newworld.co.nz"
@@ -32,13 +41,15 @@ STORES_PATH = (
     / "newworld_auckland_stores.json"
 )
 
-# The first store captured in DevTools. Add the remaining Auckland stores to
-# newworld_auckland_stores.json and select them by key from the CLI.
+# Used only if the Auckland store data file is missing or empty.
 DEFAULT_STORE_KEY = "birkenhead"
 DEFAULT_STORE = {
-    "storeId": "bc0ebd13-e131-4efd-a226-415c40ce8c4e",
+    "id": "63190876-2bd4-4562-ae34-bb5caebab4f9",
     "name": "New World Birkenhead",
-    "address": "New World Birkenhead",
+    "address": "180 Mokoia Road, Chatswood, Auckland, 0626",
+    "latitude": -36.811428,
+    "longitude": 174.711486,
+    "region": "NI",
 }
 
 
