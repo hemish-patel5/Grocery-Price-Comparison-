@@ -23,15 +23,12 @@ except ImportError:  # Allow `python backend/scrapers/newworld.py` as well.
         format_price,
     )
 
-
 NEWWORLD_BASE_URL = "https://www.newworld.co.nz"
 NEWWORLD_SEARCH_URL = (
     "https://api-prod.newworld.co.nz/v1/edge/search/paginated/products"
 )
 NEWWORLD_TOKEN_URL = f"{NEWWORLD_BASE_URL}/api/user/get-current-user"
-NEWWORLD_IMAGE_BASE_URL = (
-    "https://a.fsimg.co.nz/product/retail/fan/image"
-)
+NEWWORLD_IMAGE_BASE_URL = "https://a.fsimg.co.nz/product/retail/fan/image"
 
 NEWWORLD_HITS_PER_PAGE = 50
 NEWWORLD_MAX_PAGES = 250
@@ -575,13 +572,15 @@ def parse_args():
     )
     parser.add_argument(
         "--store",
-        default=DEFAULT_STORE_KEY,
-        help="store key from newworld_auckland_stores.json",
+        help=(
+            "scrape only this store key from newworld_auckland_stores.json; "
+            "omit to scrape every store"
+        ),
     )
     parser.add_argument(
         "--all-stores",
         action="store_true",
-        help="scrape every store in newworld_auckland_stores.json",
+        help="scrape every store (this is also the default when --store is omitted)",
     )
     parser.add_argument(
         "--department",
@@ -608,14 +607,16 @@ def parse_args():
 def main():
     args = parse_args()
     stores = load_newworld_stores()
-    if not args.all_stores and args.store not in stores:
+    scrape_all_stores = args.all_stores or args.store is None
+
+    if not scrape_all_stores and args.store not in stores:
         raise SystemExit(
             f"Unknown store {args.store!r}; available: {', '.join(stores) or 'none'}"
         )
-    if args.all_stores and args.output:
+    if scrape_all_stores and args.output:
         raise SystemExit("--output can only be used with one --store")
 
-    store_keys = list(stores) if args.all_stores else [args.store]
+    store_keys = list(stores) if scrape_all_stores else [args.store]
 
     if args.discover_only:
         for store_key in store_keys:
@@ -661,7 +662,7 @@ def main():
                 upload_newworld_products(store_key, store, products)
             completed[store_key] = len(products)
         except Exception as exc:
-            if not args.all_stores:
+            if not scrape_all_stores:
                 raise
             print(f"STORE FAILED, moving on: {store_key}: {exc}")
             failed.append(store_key)
