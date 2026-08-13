@@ -1,0 +1,92 @@
+{
+  "albany": {
+    "storeId": "773ad0a0-024e-46c5-a94b-df1cf86d25cc"
+  },
+  "birkenhead": {
+    "storeId": "63190876-2bd4-4562-ae34-bb5caebab4f9"
+  },
+  "botany": {
+    "storeId": "c387ac97-5e0a-43ed-9c93-f1edccda298d"
+  },
+  "browns_bay": {
+    "storeId": "dbdfdd2a-55f7-4870-9b51-979286323647"
+  },
+  "devonport": {
+    "storeId": "513fc849-3dbe-4333-a148-4edee5baef67"
+  },
+  "eastridge": {
+    "storeId": "491d26a4-78fd-4c6e-85e9-5b67fd97e2cc"
+  },
+  "green_bay": {
+    "storeId": "b6d36090-c7f4-4ff3-9343-5b48159f8f6d"
+  },
+  "hobsonville": {
+    "storeId": "403b1c6f-121c-4945-8aa8-fa53a7e59133"
+  },
+  "howick": {
+    "storeId": "cb3f240a-a157-490c-9e80-f537d202ef49"
+  },
+  "kumeu": {
+    "storeId": "686c8e35-aa87-40e9-b46e-8ffbad4713aa"
+  },
+  "long_bay": {
+    "storeId": "f0c21eab-1919-4cba-ac00-5b795947cdcb"
+  },
+  "metro_queen_st": {
+    "storeId": "60928d93-06fa-4d8f-92a6-8c359e7e846d"
+  },
+  "metro_shore_city": {
+    "storeId": "1898a189-acf3-4320-8704-7a9cc6b3924d"
+  },
+  "milford": {
+    "storeId": "4ff026b8-a60d-4383-8f0c-6c85f5623afa"
+  },
+  "mt_albert": {
+    "storeId": "dae2d4e3-9b97-41f4-a969-4eded0bd3554"
+  },
+  "mt_roskill": {
+    "storeId": "3ca6692b-e2a3-4d51-95b6-d061b9541e6c"
+  },
+  "new_lynn": {
+    "storeId": "c8998066-d39b-401c-aa6b-d6d18f8d122f"
+  },
+  "newmarket": {
+    "storeId": "51ee2a79-4693-410c-9287-66940847736d"
+  },
+  "orewa": {
+    "storeId": "0f82d3fe-acd0-4e98-b3e7-fbabbf8b8ef5"
+  },
+  "ormiston": {
+    "storeId": "bc0ebd13-e131-4efd-a226-415c40ce8c4e"
+  },
+  "papakura": {
+    "storeId": "ef977d89-f3d8-4e8b-8a48-b895ded38646"
+  },
+  "papatoetoe": {
+    "storeId": "c570bb70-c783-4692-aee1-6a1b235f9476"
+  },
+  "point_chevalier": {
+    "storeId": "871ff39f-99b5-4030-b035-b2dab7225082"
+  },
+  "pukekohe": {
+    "storeId": "c032987b-0387-4fc0-bb44-ce7510e35335"
+  },
+  "remuera": {
+    "storeId": "91e4dddd-aed7-4ccc-ad0b-dfe25805a495"
+  },
+  "southmall": {
+    "storeId": "adcd3dee-0ead-4b84-944a-809b95e0e36b"
+  },
+  "stonefields": {
+    "storeId": "c3a42e9d-ac58-4abf-be43-17920c720540"
+  },
+  "waiuku": {
+    "storeId": "0d045690-bd75-42d8-a7bc-ee44aa57fc61"
+  },
+  "warkworth": {
+    "storeId": "b012c209-9dfe-48c2-940c-acf73afebed4"
+  },
+  "whangaparaoa": {
+    "storeId": "7508cf88-9fd0-4e71-b2f2-d564b1decf8d"
+  }
+}
