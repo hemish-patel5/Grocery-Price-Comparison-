@@ -384,105 +384,41 @@ def cents_to_price(value):
         return None
 
 
-def comparative_unit_price(single_price):
-    comparative = single_price.get("comparativePrice") or {}
-    price = cents_to_price(comparative.get("pricePerUnit"))
-    if not price:
-        return None
-    measure = comparative.get("measureDescription")
-    return f"{price} / {measure}" if measure else price
-
-
 def normalize_newworld_prices(product):
-    """Normalize standard, promotional and Clubcard prices.
+    """Return only the effective price and whether it is a Clubcard price.
 
-    New World returns prices in cents. For an ordinary promotion,
-    singlePrice.price is already the discounted price and the previous price
-    is not present. For a Clubcard promotion, singlePrice.price is the regular
-    price and the best promotion's rewardValue is the Clubcard price.
-
-    A rewardValue is only treated as a direct item price for the response shape
-    we have verified: rewardType=NEW_PRICE with threshold=1. Other promotion
-    types are retained as metadata without guessing their per-item price.
+    Clubcard multi-buy rewardValue is the total offer price, so divide it by
+    threshold to make the stored product price comparable per item.
     """
     single_price = product.get("singlePrice") or {}
     base_price = cents_to_price(single_price.get("price"))
-    base_unit_price = comparative_unit_price(single_price)
-    promotions = product.get("promotions") or []
-    best_promotion = next(
+    club_promotion = next(
         (
             promotion
-            for promotion in promotions
+            for promotion in (product.get("promotions") or [])
             if promotion.get("bestPromotion") is True
+            and promotion.get("cardDependencyFlag") is True
+            and promotion.get("rewardType") == "NEW_PRICE"
         ),
         None,
     )
 
-    if best_promotion is None:
-        return {
-            "price": base_price,
-            "original_price": None,
-            "sale_price": None,
-            "unit_price": base_unit_price,
-            "original_unit_price": None,
-            "is_on_special": False,
-            "requires_card": False,
-            "promotion_id": None,
-            "promotion_type": None,
-            "promotion_description": None,
-            "promotion_threshold": None,
-            "promotion_limit": None,
-            "multi_products": False,
-        }
-
-    reward_type = best_promotion.get("rewardType")
-    threshold = best_promotion.get("threshold")
-    reward_price = cents_to_price(best_promotion.get("rewardValue"))
-    requires_card = bool(best_promotion.get("cardDependencyFlag"))
-    is_direct_price = (
-        reward_type == "NEW_PRICE"
-        and threshold == 1
-        and reward_price is not None
-    )
-
-    price = base_price
-    original_price = None
-    sale_price = None
-    unit_price = base_unit_price
-    original_unit_price = None
-
-    if is_direct_price:
-        promotion_unit_price = comparative_unit_price(best_promotion)
-        unit_price = promotion_unit_price or base_unit_price
-
-        if requires_card:
-            price = reward_price
-            original_price = base_price
-            sale_price = reward_price
-            if promotion_unit_price and promotion_unit_price != base_unit_price:
-                original_unit_price = base_unit_price
-        else:
-            # The public promotional price has already replaced
-            # singlePrice.price; its previous price is not in this response.
-            price = base_price or reward_price
-            sale_price = price
+    if club_promotion is not None:
+        reward_value = club_promotion.get("rewardValue")
+        threshold = club_promotion.get("threshold") or 1
+        try:
+            club_price = cents_to_price(float(reward_value) / float(threshold))
+        except (TypeError, ValueError, ZeroDivisionError):
+            club_price = None
+        if club_price is not None:
+            return {
+                "price": club_price,
+                "is_club_price": True,
+            }
 
     return {
-        "price": price,
-        "original_price": original_price,
-        "sale_price": sale_price,
-        "unit_price": unit_price,
-        "original_unit_price": original_unit_price,
-        "is_on_special": True,
-        "requires_card": requires_card,
-        "promotion_id": (
-            best_promotion.get("promoId") or single_price.get("promoId")
-        ),
-        "promotion_type": reward_type,
-        "promotion_description": best_promotion.get("description"),
-        "promotion_threshold": threshold,
-        "promotion_limit": best_promotion.get("limit"),
-        "multi_products": bool(best_promotion.get("multiProducts")),
+        "price": base_price,
+        "is_club_price": False,
     }
 
 
