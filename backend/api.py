@@ -11,6 +11,40 @@ CORS(app)
 SEARCH_RESULT_LIMIT = 100
 
 
+def optional_price(value):
+    return f"{value:.2f}" if value is not None else None
+
+
+def words(value):
+    found = set(re.findall(r"[a-z0-9&']+", (value or "").lower()))
+    return found | {word[:-1] for word in found if len(word) > 3 and word.endswith("s")}
+
+
+def combined_result_sort_key(row, stems):
+    name_words = words(f"{row.get('name') or ''} {row.get('brand') or ''}")
+    aisle_words = words(row.get("aisle"))
+    name_hit = any(stem in name_words for stem in stems)
+    aisle_hit = any(stem in aisle_words for stem in stems)
+    relevance = 0 if name_hit and aisle_hit else 1 if name_hit else 2 if aisle_hit else 3
+    price = row.get("price")
+    return relevance, price is None, price if price is not None else float("inf")
+
+
+def public_search_row(row, retailer):
+    row = dict(row)
+    if retailer == "New World":
+        # The prefix only tells the detail endpoint which table to query. The
+        # ID stored in newworld_products remains the unmodified retailer ID.
+        row["product_id"] = f"new_world:{row['product_id']}"
+    return {
+        **row,
+        "store": retailer,
+        "original_price": optional_price(row.get("original_price")),
+        "sale_price": optional_price(row.get("sale_price")),
+        "is_club_price": bool(row.get("is_club_price", False)),
+    }
+
+
 @app.route("/healthz")
 def healthz():
     return jsonify({"status": "ok"})
@@ -29,46 +63,65 @@ def search():
     if not stems:
         return jsonify([])
 
-    # matching, relevance ranking, cheapest-store lookup and deduping all
-    result = get_client().rpc("search_products", {
+    rpc_args = {
         "p_stems": stems,
         "p_limit": SEARCH_RESULT_LIMIT,
-    }).execute()
+    }
+    client = get_client()
 
-    return jsonify([
-        {
-            **row,
-            "store": "Woolworths",
-            "original_price": f"{row['original_price']:.2f}" if row["original_price"] is not None else None,
-            "sale_price": f"{row['sale_price']:.2f}" if row["sale_price"] is not None else None,
-        }
-        for row in result.data
-    ])
+    # Each retailer is searched in its own tables. Combining and sorting the
+    # small, already-ranked result sets here keeps their schemas independent.
+    woolworths = client.rpc("search_products", rpc_args).execute().data
+    new_world = client.rpc("search_newworld_products", rpc_args).execute().data
+    products = [
+        *(public_search_row(row, "Woolworths") for row in woolworths),
+        *(public_search_row(row, "New World") for row in new_world),
+    ]
+    products.sort(key=lambda row: combined_result_sort_key(row, stems))
+
+    return jsonify(products[:SEARCH_RESULT_LIMIT])
 
 
 @app.route("/api/product/<product_id>/prices")
 def product_prices(product_id):
     """Every store's price for one product, cheapest first. Backs the
     per-store comparison dropdown on the product cards."""
+    is_new_world = product_id.startswith("new_world:")
+    retailer = "New World" if is_new_world else "Woolworths"
+    database_product_id = (
+        product_id.split(":", 1)[1] if is_new_world else product_id
+    )
+    price_table = "newworld_store_prices" if is_new_world else "store_prices"
+    store_relation = "newworld_stores" if is_new_world else "stores"
+    price_columns = (
+        "price, is_club_price, "
+        f"{store_relation}(store_key, address)"
+        if is_new_world else
+        "price, original_price, sale_price, unit_price, stores(store_key, address)"
+    )
+
     result = (
         get_client()
-        .table("store_prices")
-        .select("price, original_price, sale_price, unit_price, stores(store_key, address)")
-        .eq("product_id", product_id)
+        .table(price_table)
+        .select(price_columns)
+        .eq("product_id", database_product_id)
         .order("price")
         .execute()
     )
 
     prices = []
     for row in result.data:
-        store = row.pop("stores") or {}
+        row = dict(row)
+        store = row.pop(store_relation) or {}
         prices.append({
             **row,
-            "store": "Woolworths",
+            "store": retailer,
             "store_key": store.get("store_key"),
             "store_address": store.get("address"),
-            "original_price": f"{row['original_price']:.2f}" if row["original_price"] is not None else None,
-            "sale_price": f"{row['sale_price']:.2f}" if row["sale_price"] is not None else None,
+            "original_price": optional_price(row.get("original_price")),
+            "sale_price": optional_price(row.get("sale_price")),
+            "unit_price": row.get("unit_price"),
+            "is_club_price": bool(row.get("is_club_price", False)),
         })
     return jsonify(prices)
 

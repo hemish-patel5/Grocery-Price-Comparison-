@@ -571,12 +571,17 @@ def search_newworld(query, store=None):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Scrape every New World category for one store",
+        description="Scrape every New World category for one or all stores",
     )
     parser.add_argument(
         "--store",
         default=DEFAULT_STORE_KEY,
         help="store key from newworld_auckland_stores.json",
+    )
+    parser.add_argument(
+        "--all-stores",
+        action="store_true",
+        help="scrape every store in newworld_auckland_stores.json",
     )
     parser.add_argument(
         "--department",
@@ -592,40 +597,81 @@ def parse_args():
         action="store_true",
         help="print the category tree without downloading product pages",
     )
+    parser.add_argument(
+        "--upload",
+        action="store_true",
+        help="upload the scraped products to Supabase after saving the JSON",
+    )
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
     stores = load_newworld_stores()
-    if args.store not in stores:
+    if not args.all_stores and args.store not in stores:
         raise SystemExit(
             f"Unknown store {args.store!r}; available: {', '.join(stores) or 'none'}"
         )
-    store = {**stores[args.store], "store_key": args.store}
+    if args.all_stores and args.output:
+        raise SystemExit("--output can only be used with one --store")
+
+    store_keys = list(stores) if args.all_stores else [args.store]
 
     if args.discover_only:
-        with newworld_client() as client:
-            departments = get_newworld_departments(client, store)
-        print(json.dumps(departments, indent=2, ensure_ascii=False))
+        for store_key in store_keys:
+            store = {**stores[store_key], "store_key": store_key}
+            with newworld_client() as client:
+                departments = get_newworld_departments(client, store)
+            print(json.dumps({store_key: departments}, indent=2, ensure_ascii=False))
         return
 
-    products = scrape_newworld_store(
-        args.store,
-        stores=stores,
-        department_name=args.department,
+    if args.upload:
+        try:
+            from .db import upload_newworld_products
+        except ImportError:
+            from db import upload_newworld_products
+
+    completed = {}
+    failed = []
+    for position, store_key in enumerate(store_keys, 1):
+        store = {**stores[store_key], "store_key": store_key}
+        print(f"\n===== [{position}/{len(store_keys)}] New World {store_key} =====")
+        try:
+            products = scrape_newworld_store(
+                store_key,
+                stores=stores,
+                department_name=args.department,
+            )
+            if not products:
+                raise RuntimeError("scrape returned no products")
+
+            output = args.output or (
+                Path(__file__).resolve().parent.parent
+                / "data"
+                / f"newworld_{store_key}_products.json"
+            )
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(
+                json.dumps(products, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            print(f"Saved {len(products)} products to {output}")
+
+            if args.upload:
+                upload_newworld_products(store_key, store, products)
+            completed[store_key] = len(products)
+        except Exception as exc:
+            if not args.all_stores:
+                raise
+            print(f"STORE FAILED, moving on: {store_key}: {exc}")
+            failed.append(store_key)
+
+    print(
+        f"\nNew World finished: {len(completed)}/{len(store_keys)} stores, "
+        f"{sum(completed.values())} products"
     )
-    output = args.output or (
-        Path(__file__).resolve().parent.parent
-        / "data"
-        / f"newworld_{args.store}_products.json"
-    )
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(
-        json.dumps(products, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
-    print(f"Saved {len(products)} products to {output}")
+    if failed:
+        print(f"Failed stores: {', '.join(failed)}")
 
 
 if __name__ == "__main__":

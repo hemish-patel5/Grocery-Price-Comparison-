@@ -1,10 +1,4 @@
-"""Small live New World sampler for validating stores, categories and prices.
-
-The script fetches a configurable number of products from each top-level
-department for three stores, normalizes them with the production scraper, and
-writes a single JSON report. It intentionally does not crawl every leaf or
-page, so it is safe to use as a quick integration check.
-"""
+"""Compare the same New World products across exactly three stores."""
 
 import argparse
 import json
@@ -14,21 +8,21 @@ from pathlib import Path
 try:
     from .newworld import (
         NEWWORLD_HITS_PER_PAGE,
+        algolia_quote,
         build_search_payload,
         category_filters,
-        fetch_facets,
         fetch_search_page,
         load_newworld_stores,
         newworld_client,
         normalize_newworld_product,
         store_id_from,
     )
-except ImportError:  # Allow `python backend/scrapers/newworld_sample.py`.
+except ImportError:  # Allow `python backend/scrapers/nw_test.py`.
     from newworld import (
         NEWWORLD_HITS_PER_PAGE,
+        algolia_quote,
         build_search_payload,
         category_filters,
-        fetch_facets,
         fetch_search_page,
         load_newworld_stores,
         newworld_client,
@@ -38,156 +32,203 @@ except ImportError:  # Allow `python backend/scrapers/newworld_sample.py`.
 
 
 DEFAULT_STORES = ["birkenhead", "ormiston", "new_lynn"]
-DEFAULT_ITEMS_PER_CATEGORY = 5
+DEFAULT_ITEM_COUNT = 5
+DEFAULT_DEPARTMENT = "Pantry"
 DEFAULT_OUTPUT = (
     Path(__file__).resolve().parent.parent
     / "data"
-    / "newworld_sample_test.json"
+    / "newworld_price_comparison_test.json"
 )
 
 
-def product_category(product, department):
-    """Use the product's own hierarchy while retaining the requested department."""
-    trees = product.get("categoryTrees") or []
-    tree = next(
-        (item for item in trees if item.get("level0") == department),
-        trees[0] if trees else {},
-    )
+def product_category(product, fallback_department=None):
+    tree = (product.get("categoryTrees") or [{}])[0]
     return {
-        "department": tree.get("level0") or department,
+        "department": tree.get("level0") or fallback_department,
         "category": tree.get("level1"),
         "subcategory": tree.get("level2"),
     }
 
 
-def sample_department(client, store, department, items_per_category):
+def fetch_candidates(client, store, department):
+    """Fetch a candidate pool from the first store."""
     filters = category_filters(store, department=department)
-    payload = build_search_payload(
-        store,
-        filters,
-        page=0,
-        hits_per_page=items_per_category,
+    body = fetch_search_page(
+        client,
+        build_search_payload(
+            store,
+            filters,
+            page=0,
+            hits_per_page=NEWWORLD_HITS_PER_PAGE,
+        ),
+        label=f"{store['store_key']} / {department} candidates",
+    )
+    return body.get("products") or []
+
+
+def fetch_exact_product(client, store, product_id):
+    """Fetch one exact retailer product ID at one store."""
+    filters = (
+        f"{category_filters(store)} "
+        f"AND productID:{algolia_quote(product_id)}"
     )
     body = fetch_search_page(
         client,
-        payload,
-        label=f"{store['store_key']} / {department} sample",
+        build_search_payload(store, filters, page=0, hits_per_page=1),
+        label=f"{store['store_key']} / {product_id}",
     )
-    raw_products = body.get("products") or []
-    products = [
-        normalize_newworld_product(
-            product,
-            store,
-            product_category(product, department),
-        )
-        for product in raw_products[:items_per_category]
-    ]
+    products = body.get("products") or []
+    if not products:
+        return None
+
+    raw_product = products[0]
+    return normalize_newworld_product(
+        raw_product,
+        store,
+        product_category(raw_product),
+    )
+
+
+def minimal_store_price(product):
     return {
-        "category": department,
-        "available_products": body.get("totalHits"),
-        "sample_count": len(products),
-        "products": products,
+        "store_key": product["source_store_key"],
+        "store_id": product["source_store_id"],
+        "price": product["price"],
+        "is_club_price": product["is_club_price"],
     }
 
 
-def run_sample(store_keys, items_per_category):
-    stores = load_newworld_stores()
+def compare_product(product_id, products):
+    prices = [minimal_store_price(product) for product in products]
+    distinct_prices = {price["price"] for price in prices}
+    return {
+        "product_id": product_id,
+        "name": products[0]["name"],
+        "brand": products[0].get("brand"),
+        "size": products[0].get("size"),
+        "image_url": products[0].get("image_url"),
+        "department": products[0].get("department"),
+        "category": products[0].get("category"),
+        "prices_differ": len(distinct_prices) > 1,
+        "store_prices": prices,
+    }
+
+
+def validate_options(store_keys, item_count, stores):
+    if len(store_keys) != 3:
+        raise ValueError("Choose exactly 3 stores with --stores")
+    if len(set(store_keys)) != 3:
+        raise ValueError("The 3 selected stores must be different")
+
     unknown = [key for key in store_keys if key not in stores]
     if unknown:
         raise ValueError(
             f"Unknown store(s): {', '.join(unknown)}. "
             f"Available stores: {', '.join(stores)}"
         )
-    if not 1 <= items_per_category <= NEWWORLD_HITS_PER_PAGE:
+    if not 1 <= item_count <= NEWWORLD_HITS_PER_PAGE:
         raise ValueError(
-            f"items_per_category must be between 1 and {NEWWORLD_HITS_PER_PAGE}"
+            f"item_count must be between 1 and {NEWWORLD_HITS_PER_PAGE}"
         )
 
-    report_stores = []
+
+def run_comparison(store_keys, item_count, department):
+    stores = load_newworld_stores()
+    validate_options(store_keys, item_count, stores)
+    selected_stores = [
+        {**stores[key], "store_key": key}
+        for key in store_keys
+    ]
+
+    comparisons = []
+    skipped = []
     with newworld_client() as client:
-        for store_position, store_key in enumerate(store_keys, 1):
-            store = {**stores[store_key], "store_key": store_key}
-            print(
-                f"\n[{store_position}/{len(store_keys)}] {store_key} "
-                f"({store_id_from(store)})"
-            )
-            departments = fetch_facets(
-                client,
-                store,
-                facet="category0NI",
-                filters=category_filters(store),
-            )
+        candidates = fetch_candidates(client, selected_stores[0], department)
+        print(
+            f"Found {len(candidates)} candidate products in {department}; "
+            f"looking for {item_count} available at all 3 stores"
+        )
 
-            category_results = []
-            failures = []
-            for category_position, department in enumerate(departments, 1):
-                name = department["name"]
-                print(
-                    f"  [{category_position}/{len(departments)}] "
-                    f"{name}: requesting {items_per_category} products"
-                )
-                try:
-                    category_results.append(
-                        sample_department(
-                            client,
-                            store,
-                            name,
-                            items_per_category,
-                        )
-                    )
-                except Exception as exc:
-                    print(f"    FAILED: {exc}")
-                    failures.append({
-                        "category": name,
-                        "error": str(exc),
+        for candidate in candidates:
+            if len(comparisons) >= item_count:
+                break
+
+            product_id = candidate.get("productId")
+            if not product_id:
+                continue
+
+            store_products = []
+            for store in selected_stores:
+                product = fetch_exact_product(client, store, product_id)
+                if product is None:
+                    skipped.append({
+                        "product_id": product_id,
+                        "name": candidate.get("name"),
+                        "missing_from": store["store_key"],
                     })
+                    break
+                store_products.append(product)
 
-            report_stores.append({
-                "store_key": store_key,
-                "store_id": store_id_from(store),
-                "category_count": len(category_results),
-                "product_count": sum(
-                    category["sample_count"]
-                    for category in category_results
-                ),
-                "failed_categories": failures,
-                "categories": category_results,
-            })
+            if len(store_products) != len(selected_stores):
+                continue
+
+            comparison = compare_product(product_id, store_products)
+            comparisons.append(comparison)
+            print(f"\n[{len(comparisons)}/{item_count}] {comparison['name']}")
+            for store_price in comparison["store_prices"]:
+                club = " (Clubcard)" if store_price["is_club_price"] else ""
+                print(
+                    f"  {store_price['store_key']}: "
+                    f"${store_price['price']}{club}"
+                )
+
+    if len(comparisons) < item_count:
+        raise RuntimeError(
+            f"Only found {len(comparisons)} products available at all 3 stores; "
+            f"requested {item_count}"
+        )
 
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "items_per_category": items_per_category,
-        "requested_stores": store_keys,
-        "store_count": len(report_stores),
-        "category_sample_count": sum(
-            store["category_count"]
-            for store in report_stores
+        "department": department,
+        "requested_item_count": item_count,
+        "stores": [
+            {
+                "store_key": store["store_key"],
+                "store_id": store_id_from(store),
+            }
+            for store in selected_stores
+        ],
+        "comparison_count": len(comparisons),
+        "different_price_count": sum(
+            item["prices_differ"] for item in comparisons
         ),
-        "product_count": sum(
-            store["product_count"]
-            for store in report_stores
-        ),
-        "stores": report_stores,
+        "comparisons": comparisons,
+        "skipped_candidates": skipped,
     }
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description=(
-            "Sample products from every top-level New World category for "
-            "three stores"
-        ),
+        description="Compare the same New World products across 3 stores",
     )
     parser.add_argument(
         "--stores",
-        nargs="+",
+        nargs=3,
         default=DEFAULT_STORES,
-        help="store keys from newworld_auckland_stores.json",
+        metavar=("STORE_1", "STORE_2", "STORE_3"),
+        help="exactly 3 keys from newworld_auckland_stores.json",
     )
     parser.add_argument(
-        "--items-per-category",
+        "--items",
         type=int,
-        default=DEFAULT_ITEMS_PER_CATEGORY,
+        default=DEFAULT_ITEM_COUNT,
+        help="number of identical products to compare (default: 5)",
+    )
+    parser.add_argument(
+        "--department",
+        default=DEFAULT_DEPARTMENT,
+        help="department used to select reference products (default: Pantry)",
     )
     parser.add_argument(
         "--output",
@@ -200,8 +241,8 @@ def parse_args():
 def main():
     args = parse_args()
     try:
-        report = run_sample(args.stores, args.items_per_category)
-    except ValueError as exc:
+        report = run_comparison(args.stores, args.items, args.department)
+    except (ValueError, RuntimeError) as exc:
         raise SystemExit(str(exc)) from exc
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -210,9 +251,12 @@ def main():
         encoding="utf-8",
     )
     print(
-        f"\nSaved {report['product_count']} products from "
-        f"{report['category_sample_count']} store/category samples to "
+        f"\nSaved {report['comparison_count']} product comparisons to "
         f"{args.output}"
+    )
+    print(
+        f"Products with different prices: "
+        f"{report['different_price_count']}/{report['comparison_count']}"
     )
 
 

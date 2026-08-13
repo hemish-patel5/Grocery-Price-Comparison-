@@ -32,6 +32,11 @@ const PriceBlock = ({ item, compact }) => (
           was {formatPrice(item.original_price)}
         </span>
       )}
+    {item.is_club_price && (
+      <span className="text-[10px] sm:text-xs font-black uppercase text-red-600">
+        Clubcard price
+      </span>
+    )}
   </div>
 );
 
