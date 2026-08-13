@@ -14,24 +14,48 @@ const formatPrice = (value) => {
   return Number.isNaN(number) ? value : `$${number.toFixed(2)}`;
 };
 
+const priceUnit = (item) => {
+  const size = String(item.size || "").trim();
+  if (!size) return "";
+
+  const isPerKilogram =
+    size.toLowerCase() === "kg" ||
+    String(item.product_id || "").toUpperCase().includes("-KGM-");
+  if (isPerKilogram) return "per kg";
+  if (size.toLowerCase() === "ea") return "each";
+  return size.replace(/ml$/i, "mL").replace(/l$/i, "L");
+};
+
 const PriceBlock = ({ item, compact }) => (
   <div className="flex min-w-16 sm:min-w-28 flex-col items-end gap-0.5 sm:gap-1 text-right shrink-0">
     <span className="text-[10px] sm:text-xs font-bold uppercase text-gray-400">
       Price
     </span>
-    <strong
-      className={`${compact ? "text-base sm:text-xl" : "text-lg sm:text-2xl"} font-black tracking-tight ${
+    <div
+      className={`flex items-baseline justify-end gap-1 font-black tracking-tight ${
         item.sale_price != null ? "text-blue-600" : "text-gray-900"
       }`}
     >
-      {formatPrice(item.price)}
-    </strong>
+      <strong className={compact ? "text-base sm:text-xl" : "text-lg sm:text-2xl"}>
+        {formatPrice(item.price)}
+      </strong>
+      {priceUnit(item) && (
+        <span className="text-[10px] sm:text-xs font-bold whitespace-nowrap">
+          {priceUnit(item)}
+        </span>
+      )}
+    </div>
     {item.sale_price != null &&
       Number(item.original_price) > Number(item.sale_price) && (
         <span className="text-[11px] sm:text-sm font-semibold text-gray-400 line-through">
           was {formatPrice(item.original_price)}
         </span>
       )}
+    {item.is_club_price && (
+      <span className="text-[10px] sm:text-xs font-black uppercase text-red-600">
+        Clubcard price
+      </span>
+    )}
   </div>
 );
 
@@ -47,17 +71,14 @@ const ProductInfo = ({ item }) => (
         {item.store_address || "Store address unavailable"}
       </span>
     </div>
-    <p className="text-xs sm:text-sm font-bold uppercase text-blue-600 truncate">
-      {item.brand || "Unknown brand"}
-    </p>
+    {item.brand && (
+      <p className="text-xs sm:text-sm font-bold uppercase text-blue-600 truncate">
+        {item.brand}
+      </p>
+    )}
     <h2 className="text-sm sm:text-lg font-semibold text-gray-800 group-hover:text-blue-900 transition-colors leading-tight capitalize">
       {item.name}
     </h2>
-    {item.size && (
-      <p className="text-[11px] sm:text-xs font-semibold text-gray-500 mt-0.5">
-        {item.size}
-      </p>
-    )}
   </div>
 );
 
@@ -205,15 +226,17 @@ const App = () => {
                       Loading stores...
                     </li>
                   )}
-                  {(storePrices[p.product_id] || []).map((sp, j) => (
-                    <li
-                      key={sp.store_key || j}
-                      className="flex gap-3 sm:gap-5 items-center bg-gray-50 rounded-xl border border-gray-100 p-2.5 sm:p-3"
-                    >
-                      <ProductInfo item={{ ...p, ...sp }} />
-                      <PriceBlock item={sp} compact />
-                    </li>
-                  ))}
+                  {(storePrices[p.product_id] || [])
+                    .filter((sp) => sp.store_key !== p.store_key)
+                    .map((sp, j) => (
+                      <li
+                        key={sp.store_key || j}
+                        className="flex gap-3 sm:gap-5 items-center bg-gray-50 rounded-xl border border-gray-100 p-2.5 sm:p-3"
+                      >
+                        <ProductInfo item={{ ...p, ...sp }} />
+                        <PriceBlock item={{ ...p, ...sp }} compact />
+                      </li>
+                    ))}
                 </ul>
               )}
             </li>

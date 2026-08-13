@@ -23,15 +23,12 @@ except ImportError:  # Allow `python backend/scrapers/newworld.py` as well.
         format_price,
     )
 
-
 NEWWORLD_BASE_URL = "https://www.newworld.co.nz"
 NEWWORLD_SEARCH_URL = (
     "https://api-prod.newworld.co.nz/v1/edge/search/paginated/products"
 )
 NEWWORLD_TOKEN_URL = f"{NEWWORLD_BASE_URL}/api/user/get-current-user"
-NEWWORLD_IMAGE_BASE_URL = (
-    "https://a.fsimg.co.nz/product/retail/fan/image"
-)
+NEWWORLD_IMAGE_BASE_URL = "https://a.fsimg.co.nz/product/retail/fan/image"
 
 NEWWORLD_HITS_PER_PAGE = 50
 NEWWORLD_MAX_PAGES = 250
@@ -431,24 +428,10 @@ def normalize_newworld_product(product, store, category):
         ("sku",),
         ("barcode",),
     ])
-    product_path = first_value(product, [
-        ("url",),
-        ("productUrl",),
-        ("productURL",),
-        ("slug",),
-    ])
-    store_id = store_id_from(store)
 
     return {
-        "name": product.get("name") or "Unknown",
-        **prices,
-        "store": "New World",
         "product_id": product_id,
-        "barcode": first_value(product, [
-            ("barcode",),
-            ("gtin",),
-            ("ean",),
-        ]),
+        "name": product.get("name") or "Unknown",
         "brand": first_value(product, [
             ("brand",),
             ("brandName",),
@@ -462,20 +445,11 @@ def normalize_newworld_product(product, store, category):
             ("unit",),
         ]),
         "image_url": find_newworld_image_url(product),
-        "product_url": absolute_url(product_path, NEWWORLD_BASE_URL),
-        "sale_type": product.get("saleType"),
-        "variable_weight": product.get("variableWeight"),
-        "availability": product.get("availability") or [],
         "department": category.get("department"),
-        "category": category.get("category"),
         "aisle": category.get("subcategory") or category.get("category"),
+        **prices,
+        "store": "New World",
         "source_store_key": store.get("store_key") if isinstance(store, dict) else None,
-        "source_store_id": store_id,
-        "source_store_address": (
-            first_value(store, [("address",), ("name",)])
-            if isinstance(store, dict)
-            else None
-        ),
     }
 
 
@@ -542,6 +516,58 @@ def scrape_newworld_store(store_key, stores=None, department_name=None):
     return products
 
 
+def product_category(product, fallback_department=None):
+    """Read the product's category path from a search response."""
+    tree = (product.get("categoryTrees") or [{}])[0]
+    return {
+        "department": tree.get("level0") or fallback_department,
+        "category": tree.get("level1"),
+        "subcategory": tree.get("level2"),
+    }
+
+
+def scrape_newworld_sample(store_key, limit, stores=None, department_name=None):
+    """Fetch a small product sample without crawling every category."""
+    if not 1 <= limit <= NEWWORLD_HITS_PER_PAGE:
+        raise ValueError(
+            f"Sample limit must be between 1 and {NEWWORLD_HITS_PER_PAGE}"
+        )
+
+    stores = stores or load_newworld_stores()
+    if store_key not in stores:
+        raise KeyError(f"Unknown New World store key: {store_key}")
+
+    store = {**stores[store_key], "store_key": store_key}
+    filters = category_filters(store, department=department_name)
+    with newworld_client() as client:
+        body = fetch_search_page(
+            client,
+            build_search_payload(
+                store,
+                filters,
+                page=0,
+                hits_per_page=limit,
+            ),
+            label=f"{store_key} sample",
+        )
+
+    products = [
+        normalize_newworld_product(
+            product,
+            store,
+            product_category(product, fallback_department=department_name),
+        )
+        for product in dedupe_products(body.get("products") or [])
+    ]
+    products = [
+        product
+        for product in products
+        if product.get("product_id") and product.get("price") is not None
+    ][:limit]
+    print(f"New World {store_key} sample: {len(products)}/{limit} products")
+    return products
+
+
 def search_newworld(query, store=None):
     """Compatibility helper for query-based searches against one store."""
     store = store or {**DEFAULT_STORE, "store_key": DEFAULT_STORE_KEY}
@@ -571,16 +597,36 @@ def search_newworld(query, store=None):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Scrape every New World category for one store",
+        description="Scrape every New World category for one or all stores",
     )
     parser.add_argument(
         "--store",
-        default=DEFAULT_STORE_KEY,
-        help="store key from newworld_auckland_stores.json",
+        help=(
+            "scrape only this store key from newworld_auckland_stores.json; "
+            "omit to scrape every store"
+        ),
+    )
+    parser.add_argument(
+        "--stores",
+        nargs="+",
+        help="scrape only these store keys from newworld_auckland_stores.json",
+    )
+    parser.add_argument(
+        "--all-stores",
+        action="store_true",
+        help="scrape every store (this is also the default when --store is omitted)",
     )
     parser.add_argument(
         "--department",
         help="scrape only one department (useful for a test run)",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        help=(
+            f"fetch only a small sample of 1-{NEWWORLD_HITS_PER_PAGE} products "
+            "instead of crawling every category"
+        ),
     )
     parser.add_argument(
         "--output",
@@ -588,9 +634,19 @@ def parse_args():
         help="JSON output path (defaults to backend/data/newworld_<store>.json)",
     )
     parser.add_argument(
+        "--no-json",
+        action="store_true",
+        help="do not write product JSON files (use with --upload for upload-only runs)",
+    )
+    parser.add_argument(
         "--discover-only",
         action="store_true",
         help="print the category tree without downloading product pages",
+    )
+    parser.add_argument(
+        "--upload",
+        action="store_true",
+        help="upload the scraped products to Supabase after saving the JSON",
     )
     return parser.parse_args()
 
@@ -598,34 +654,97 @@ def parse_args():
 def main():
     args = parse_args()
     stores = load_newworld_stores()
-    if args.store not in stores:
+    if args.store and args.stores:
+        raise SystemExit("Use either --store or --stores, not both")
+    if args.all_stores and (args.store or args.stores):
+        raise SystemExit("--all-stores cannot be combined with --store or --stores")
+    if args.no_json and args.output:
+        raise SystemExit("--no-json cannot be combined with --output")
+
+    selected_store_keys = args.stores or ([args.store] if args.store else None)
+    scrape_all_stores = args.all_stores or selected_store_keys is None
+
+    unknown_stores = [
+        store_key
+        for store_key in (selected_store_keys or [])
+        if store_key not in stores
+    ]
+    if unknown_stores:
         raise SystemExit(
-            f"Unknown store {args.store!r}; available: {', '.join(stores) or 'none'}"
+            f"Unknown store(s) {', '.join(unknown_stores)}; "
+            f"available: {', '.join(stores) or 'none'}"
         )
-    store = {**stores[args.store], "store_key": args.store}
+    if scrape_all_stores and args.output:
+        raise SystemExit("--output can only be used with one --store")
+    if selected_store_keys and len(selected_store_keys) > 1 and args.output:
+        raise SystemExit("--output can only be used with one selected store")
+
+    store_keys = list(stores) if scrape_all_stores else selected_store_keys
 
     if args.discover_only:
-        with newworld_client() as client:
-            departments = get_newworld_departments(client, store)
-        print(json.dumps(departments, indent=2, ensure_ascii=False))
+        for store_key in store_keys:
+            store = {**stores[store_key], "store_key": store_key}
+            with newworld_client() as client:
+                departments = get_newworld_departments(client, store)
+            print(json.dumps({store_key: departments}, indent=2, ensure_ascii=False))
         return
 
-    products = scrape_newworld_store(
-        args.store,
-        stores=stores,
-        department_name=args.department,
+    if args.upload:
+        try:
+            from .db import upload_newworld_products
+        except ImportError:
+            from db import upload_newworld_products
+
+    completed = {}
+    failed = []
+    for position, store_key in enumerate(store_keys, 1):
+        store = {**stores[store_key], "store_key": store_key}
+        print(f"\n===== [{position}/{len(store_keys)}] New World {store_key} =====")
+        try:
+            if args.limit is not None:
+                products = scrape_newworld_sample(
+                    store_key,
+                    args.limit,
+                    stores=stores,
+                    department_name=args.department,
+                )
+            else:
+                products = scrape_newworld_store(
+                    store_key,
+                    stores=stores,
+                    department_name=args.department,
+                )
+            if not products:
+                raise RuntimeError("scrape returned no products")
+
+            if not args.no_json:
+                output = args.output or (
+                    Path(__file__).resolve().parent.parent
+                    / "data"
+                    / f"newworld_{store_key}_products.json"
+                )
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_text(
+                    json.dumps(products, indent=2, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+                print(f"Saved {len(products)} products to {output}")
+
+            if args.upload:
+                upload_newworld_products(store_key, store, products)
+            completed[store_key] = len(products)
+        except Exception as exc:
+            if not scrape_all_stores:
+                raise
+            print(f"STORE FAILED, moving on: {store_key}: {exc}")
+            failed.append(store_key)
+
+    print(
+        f"\nNew World finished: {len(completed)}/{len(store_keys)} stores, "
+        f"{sum(completed.values())} products"
     )
-    output = args.output or (
-        Path(__file__).resolve().parent.parent
-        / "data"
-        / f"newworld_{args.store}_products.json"
-    )
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(
-        json.dumps(products, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
-    print(f"Saved {len(products)} products to {output}")
+    if failed:
+        print(f"Failed stores: {', '.join(failed)}")
 
 
 if __name__ == "__main__":
