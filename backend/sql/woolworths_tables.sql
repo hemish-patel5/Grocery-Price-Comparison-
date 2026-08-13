@@ -53,6 +53,10 @@ create index store_prices_product_price_idx
 -- Returns the cheapest Woolworths store for each matching catalog product.
 -- Its columns deliberately match search_newworld_products so api.py can
 -- combine both result sets without retailer-specific display logic.
+-- Drop the previous RPC definition so this script can replace an existing
+-- function with the same arguments, including one with an older return type.
+drop function if exists public.search_products(text[], integer);
+
 create function public.search_products(
     p_stems text[],
     p_limit integer default 100

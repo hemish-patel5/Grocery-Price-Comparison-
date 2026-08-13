@@ -47,6 +47,10 @@ create index newworld_store_prices_product_price_idx
 
 -- Returns exactly the same columns as search_products. New World does not
 -- scrape Woolworths-style original/sale/unit prices, so those values are null.
+-- Drop the previous RPC definition so this script can replace an existing
+-- function with the same arguments, including one with an older return type.
+drop function if exists public.search_newworld_products(text[], integer);
+
 create function public.search_newworld_products(
     p_stems text[],
     p_limit integer default 100
