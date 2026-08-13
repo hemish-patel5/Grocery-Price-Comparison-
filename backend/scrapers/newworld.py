@@ -607,6 +607,11 @@ def parse_args():
         ),
     )
     parser.add_argument(
+        "--stores",
+        nargs="+",
+        help="scrape only these store keys from newworld_auckland_stores.json",
+    )
+    parser.add_argument(
         "--all-stores",
         action="store_true",
         help="scrape every store (this is also the default when --store is omitted)",
@@ -629,6 +634,11 @@ def parse_args():
         help="JSON output path (defaults to backend/data/newworld_<store>.json)",
     )
     parser.add_argument(
+        "--no-json",
+        action="store_true",
+        help="do not write product JSON files (use with --upload for upload-only runs)",
+    )
+    parser.add_argument(
         "--discover-only",
         action="store_true",
         help="print the category tree without downloading product pages",
@@ -644,16 +654,32 @@ def parse_args():
 def main():
     args = parse_args()
     stores = load_newworld_stores()
-    scrape_all_stores = args.all_stores or args.store is None
+    if args.store and args.stores:
+        raise SystemExit("Use either --store or --stores, not both")
+    if args.all_stores and (args.store or args.stores):
+        raise SystemExit("--all-stores cannot be combined with --store or --stores")
+    if args.no_json and args.output:
+        raise SystemExit("--no-json cannot be combined with --output")
 
-    if not scrape_all_stores and args.store not in stores:
+    selected_store_keys = args.stores or ([args.store] if args.store else None)
+    scrape_all_stores = args.all_stores or selected_store_keys is None
+
+    unknown_stores = [
+        store_key
+        for store_key in (selected_store_keys or [])
+        if store_key not in stores
+    ]
+    if unknown_stores:
         raise SystemExit(
-            f"Unknown store {args.store!r}; available: {', '.join(stores) or 'none'}"
+            f"Unknown store(s) {', '.join(unknown_stores)}; "
+            f"available: {', '.join(stores) or 'none'}"
         )
     if scrape_all_stores and args.output:
         raise SystemExit("--output can only be used with one --store")
+    if selected_store_keys and len(selected_store_keys) > 1 and args.output:
+        raise SystemExit("--output can only be used with one selected store")
 
-    store_keys = list(stores) if scrape_all_stores else [args.store]
+    store_keys = list(stores) if scrape_all_stores else selected_store_keys
 
     if args.discover_only:
         for store_key in store_keys:
@@ -691,17 +717,18 @@ def main():
             if not products:
                 raise RuntimeError("scrape returned no products")
 
-            output = args.output or (
-                Path(__file__).resolve().parent.parent
-                / "data"
-                / f"newworld_{store_key}_products.json"
-            )
-            output.parent.mkdir(parents=True, exist_ok=True)
-            output.write_text(
-                json.dumps(products, indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
-            print(f"Saved {len(products)} products to {output}")
+            if not args.no_json:
+                output = args.output or (
+                    Path(__file__).resolve().parent.parent
+                    / "data"
+                    / f"newworld_{store_key}_products.json"
+                )
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_text(
+                    json.dumps(products, indent=2, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+                print(f"Saved {len(products)} products to {output}")
 
             if args.upload:
                 upload_newworld_products(store_key, store, products)
