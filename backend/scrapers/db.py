@@ -15,8 +15,11 @@ _client = None
 def get_client():
     global _client
     if _client is None:
+        supabase_url = os.environ["SUPABASE_URL"].rstrip("/")
+        if supabase_url.endswith("/rest/v1"):
+            supabase_url = supabase_url.removesuffix("/rest/v1")
         _client = create_client(
-            os.environ["SUPABASE_URL"],
+            supabase_url,
             os.environ["SUPABASE_SERVICE_KEY"],
         )
     return _client

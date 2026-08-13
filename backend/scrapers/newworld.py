@@ -516,6 +516,58 @@ def scrape_newworld_store(store_key, stores=None, department_name=None):
     return products
 
 
+def product_category(product, fallback_department=None):
+    """Read the product's category path from a search response."""
+    tree = (product.get("categoryTrees") or [{}])[0]
+    return {
+        "department": tree.get("level0") or fallback_department,
+        "category": tree.get("level1"),
+        "subcategory": tree.get("level2"),
+    }
+
+
+def scrape_newworld_sample(store_key, limit, stores=None, department_name=None):
+    """Fetch a small product sample without crawling every category."""
+    if not 1 <= limit <= NEWWORLD_HITS_PER_PAGE:
+        raise ValueError(
+            f"Sample limit must be between 1 and {NEWWORLD_HITS_PER_PAGE}"
+        )
+
+    stores = stores or load_newworld_stores()
+    if store_key not in stores:
+        raise KeyError(f"Unknown New World store key: {store_key}")
+
+    store = {**stores[store_key], "store_key": store_key}
+    filters = category_filters(store, department=department_name)
+    with newworld_client() as client:
+        body = fetch_search_page(
+            client,
+            build_search_payload(
+                store,
+                filters,
+                page=0,
+                hits_per_page=limit,
+            ),
+            label=f"{store_key} sample",
+        )
+
+    products = [
+        normalize_newworld_product(
+            product,
+            store,
+            product_category(product, fallback_department=department_name),
+        )
+        for product in dedupe_products(body.get("products") or [])
+    ]
+    products = [
+        product
+        for product in products
+        if product.get("product_id") and product.get("price") is not None
+    ][:limit]
+    print(f"New World {store_key} sample: {len(products)}/{limit} products")
+    return products
+
+
 def search_newworld(query, store=None):
     """Compatibility helper for query-based searches against one store."""
     store = store or {**DEFAULT_STORE, "store_key": DEFAULT_STORE_KEY}
@@ -562,6 +614,14 @@ def parse_args():
     parser.add_argument(
         "--department",
         help="scrape only one department (useful for a test run)",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        help=(
+            f"fetch only a small sample of 1-{NEWWORLD_HITS_PER_PAGE} products "
+            "instead of crawling every category"
+        ),
     )
     parser.add_argument(
         "--output",
@@ -615,11 +675,19 @@ def main():
         store = {**stores[store_key], "store_key": store_key}
         print(f"\n===== [{position}/{len(store_keys)}] New World {store_key} =====")
         try:
-            products = scrape_newworld_store(
-                store_key,
-                stores=stores,
-                department_name=args.department,
-            )
+            if args.limit is not None:
+                products = scrape_newworld_sample(
+                    store_key,
+                    args.limit,
+                    stores=stores,
+                    department_name=args.department,
+                )
+            else:
+                products = scrape_newworld_store(
+                    store_key,
+                    stores=stores,
+                    department_name=args.department,
+                )
             if not products:
                 raise RuntimeError("scrape returned no products")
 
