@@ -428,24 +428,10 @@ def normalize_newworld_product(product, store, category):
         ("sku",),
         ("barcode",),
     ])
-    product_path = first_value(product, [
-        ("url",),
-        ("productUrl",),
-        ("productURL",),
-        ("slug",),
-    ])
-    store_id = store_id_from(store)
 
     return {
-        "name": product.get("name") or "Unknown",
-        **prices,
-        "store": "New World",
         "product_id": product_id,
-        "barcode": first_value(product, [
-            ("barcode",),
-            ("gtin",),
-            ("ean",),
-        ]),
+        "name": product.get("name") or "Unknown",
         "brand": first_value(product, [
             ("brand",),
             ("brandName",),
@@ -459,20 +445,11 @@ def normalize_newworld_product(product, store, category):
             ("unit",),
         ]),
         "image_url": find_newworld_image_url(product),
-        "product_url": absolute_url(product_path, NEWWORLD_BASE_URL),
-        "sale_type": product.get("saleType"),
-        "variable_weight": product.get("variableWeight"),
-        "availability": product.get("availability") or [],
         "department": category.get("department"),
-        "category": category.get("category"),
         "aisle": category.get("subcategory") or category.get("category"),
+        **prices,
+        "store": "New World",
         "source_store_key": store.get("store_key") if isinstance(store, dict) else None,
-        "source_store_id": store_id,
-        "source_store_address": (
-            first_value(store, [("address",), ("name",)])
-            if isinstance(store, dict)
-            else None
-        ),
     }
 
 

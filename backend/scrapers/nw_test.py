@@ -92,7 +92,6 @@ def fetch_exact_product(client, store, product_id):
 def minimal_store_price(product):
     return {
         "store_key": product["source_store_key"],
-        "store_id": product["source_store_id"],
         "price": product["price"],
         "is_club_price": product["is_club_price"],
     }
@@ -108,7 +107,7 @@ def compare_product(product_id, products):
         "size": products[0].get("size"),
         "image_url": products[0].get("image_url"),
         "department": products[0].get("department"),
-        "category": products[0].get("category"),
+        "aisle": products[0].get("aisle"),
         "prices_differ": len(distinct_prices) > 1,
         "store_prices": prices,
     }
