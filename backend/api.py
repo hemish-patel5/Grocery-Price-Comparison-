@@ -91,13 +91,16 @@ def product_prices(product_id):
     database_product_id = (
         product_id.split(":", 1)[1] if is_new_world else product_id
     )
-    price_table = "newworld_store_prices" if is_new_world else "store_prices"
-    store_relation = "newworld_stores" if is_new_world else "stores"
+    price_table = (
+        "newworld_store_prices" if is_new_world else "woolies_store_prices"
+    )
+    store_relation = "newworld_stores" if is_new_world else "woolies_stores"
     price_columns = (
         "price, is_club_price, "
         f"{store_relation}(store_key, address)"
         if is_new_world else
-        "price, original_price, sale_price, unit_price, stores(store_key, address)"
+        "price, original_price, sale_price, unit_price, "
+        "woolies_stores(store_key, address)"
     )
 
     result = (

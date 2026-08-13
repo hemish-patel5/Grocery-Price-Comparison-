@@ -32,7 +32,7 @@ def newworld_store_name(store_key, store):
 def get_or_create_store(store_key, store):
     client = get_client()
 
-    client.table("stores").upsert({
+    client.table("woolies_stores").upsert({
         "store_key": store_key,
         "address": store["address"],
         "fulfilment_store_id": store["fulfilmentStoreId"],
@@ -40,7 +40,12 @@ def get_or_create_store(store_key, store):
         "pickup_address_id": store.get("pickupAddressId"),
     }, on_conflict="store_key").execute()
 
-    result = client.table("stores").select("id").eq("store_key", store_key).execute()
+    result = (
+        client.table("woolies_stores")
+        .select("id")
+        .eq("store_key", store_key)
+        .execute()
+    )
     return result.data[0]["id"]
 
 
@@ -132,18 +137,18 @@ def upload_products(store_key, store, products):
     }
 
     upsert_chunked(
-        client, "products",
+        client, "woolies_products",
         [catalog_row(p) for p in unique.values()],
         on_conflict="product_id", label="products",
     )
     upsert_chunked(
-        client, "store_prices",
+        client, "woolies_store_prices",
         [price_row(p, store_id) for p in unique.values()],
         on_conflict="product_id,store_id", label="prices",
     )
 
     # scrape time lives on the store, stamped once the upload succeeded
-    client.table("stores").update({
+    client.table("woolies_stores").update({
         "scraped_at": datetime.now(timezone.utc).isoformat(),
     }).eq("id", store_id).execute()
 

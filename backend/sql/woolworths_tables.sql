@@ -2,7 +2,7 @@
 -- Run this on a fresh Supabase schema. Prices are stored separately because
 -- one catalog product can have a different price at every store.
 
-create table public.stores (
+create table public.woolies_stores (
     id bigint generated always as identity primary key,
     store_key text not null unique,
     address text not null,
@@ -13,7 +13,7 @@ create table public.stores (
     scraped_at timestamptz
 );
 
-create table public.products (
+create table public.woolies_products (
     product_id text primary key,
     name text not null,
     brand text,
@@ -23,11 +23,11 @@ create table public.products (
     image_url text
 );
 
-create table public.store_prices (
+create table public.woolies_store_prices (
     product_id text not null
-        references public.products(product_id) on delete cascade,
+        references public.woolies_products(product_id) on delete cascade,
     store_id bigint not null
-        references public.stores(id) on delete cascade,
+        references public.woolies_stores(id) on delete cascade,
     price numeric(10, 2),
     original_price numeric(10, 2),
     sale_price numeric(10, 2),
@@ -35,20 +35,20 @@ create table public.store_prices (
     primary key (product_id, store_id)
 );
 
-create index products_name_idx
-    on public.products (name);
+create index woolies_products_name_idx
+    on public.woolies_products (name);
 
-create index products_department_idx
-    on public.products (department);
+create index woolies_products_department_idx
+    on public.woolies_products (department);
 
-create index products_aisle_idx
-    on public.products (aisle);
+create index woolies_products_aisle_idx
+    on public.woolies_products (aisle);
 
-create index store_prices_store_price_idx
-    on public.store_prices (store_id, price);
+create index woolies_store_prices_store_price_idx
+    on public.woolies_store_prices (store_id, price);
 
-create index store_prices_product_price_idx
-    on public.store_prices (product_id, price);
+create index woolies_store_prices_product_price_idx
+    on public.woolies_store_prices (product_id, price);
 
 -- Returns the cheapest Woolworths store for each matching catalog product.
 -- Its columns deliberately match search_newworld_products so api.py can
@@ -110,7 +110,7 @@ as $$
                 ) then 1
                 else 2
             end as relevance
-        from public.products p
+        from public.woolies_products p
         join lateral (
             select
                 sp.price,
@@ -119,8 +119,8 @@ as $$
                 sp.unit_price,
                 s.store_key,
                 s.address as store_address
-            from public.store_prices sp
-            join public.stores s on s.id = sp.store_id
+            from public.woolies_store_prices sp
+            join public.woolies_stores s on s.id = sp.store_id
             where sp.product_id = p.product_id
               and sp.price is not null
             order by sp.price
