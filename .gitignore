@@ -21,6 +21,7 @@ sql
 !backend/sql/
 !backend/sql/*.sql
 backend/data/newworld_*_products.json
+backend/data/paknsave_*_products.json
 backend/data/newworld_sample_test.json
 backend/data/newworld_price_comparison_test.json
 .venv
