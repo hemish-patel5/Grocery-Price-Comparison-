@@ -1,0 +1,74 @@
+{
+  "royal_oak": {
+    "storeId": "e1925ea7-01bc-4358-ae7c-c6502da5ab12",
+    "name": "PAK'nSAVE Royal Oak"
+  },
+  "silverdale": {
+    "storeId": "64eab5b1-8d79-45f4-94f1-02b8cf8b6202",
+    "name": "PAK'nSAVE Silverdale"
+  },
+  "manukau": {
+    "storeId": "9cd8eb60-3222-4efc-bd7c-50e03e6a81a4",
+    "name": "PAK'nSAVE Manukau"
+  },
+  "henderson": {
+    "storeId": "6c73764e-b8e6-4e55-ad37-f6a9d207da1f",
+    "name": "PAK'nSAVE Alderman Dr Henderson"
+  },
+  "ormiston": {
+    "storeId": "5f167936-79ae-4f6a-b9d2-74afe1bb096b",
+    "name": "PAK'nSAVE Ormiston"
+  },
+  "botany": {
+    "storeId": "60561e46-ece7-43a7-b142-9b14812586e4",
+    "name": "PAK'nSAVE Botany"
+  },
+  "pukekohe": {
+    "storeId": "c2204dae-579e-4b6b-9d42-2e13ceaa6031",
+    "name": "PAK'nSAVE Pukekohe"
+  },
+  "mt_albert": {
+    "storeId": "b2e98a14-c8ca-401e-99ed-edf74570c6f6",
+    "name": "PAK'nSAVE Mt Albert"
+  },
+  "clendon": {
+    "storeId": "3e82142c-78dc-46f3-82ec-28e65fcf84c9",
+    "name": "PAK'nSAVE Clendon"
+  },
+  "papakura": {
+    "storeId": "a7d09522-bee2-41f0-9482-ffd10b745143",
+    "name": "PAK'nSAVE Papakura"
+  },
+  "glen_innes": {
+    "storeId": "3404c253-577f-45ca-b301-c98312e46efb",
+    "name": "PAK'nSAVE Glen Innes"
+  },
+  "albany": {
+    "storeId": "65defcf2-bc15-490e-a84f-1f13b769cd22",
+    "name": "PAK'nSAVE Albany"
+  },
+  "westgate": {
+    "storeId": "33d8d6fc-861a-45ff-9937-5ccdb55eaede",
+    "name": "PAK'nSAVE Westgate"
+  },
+  "lincoln_road": {
+    "storeId": "92086ded-a55d-4241-a364-7d7ea91531b4",
+    "name": "PAK'nSAVE Lincoln Road"
+  },
+  "sylvia_park": {
+    "storeId": "c0f80e87-16be-4488-9553-da437e8c6c2a",
+    "name": "PAK'nSAVE Sylvia Park"
+  },
+  "mangere": {
+    "storeId": "94ef1985-cab1-4b39-a2f3-230120f03c16",
+    "name": "PAK'nSAVE Mangere"
+  },
+  "warkworth": {
+    "storeId": "8f0d70be-5cb7-464b-99cb-8b0130671895",
+    "name": "PAK'nSAVE Warkworth"
+  },
+  "highland_park": {
+    "storeId": "2a1b331a-fc4a-496a-b072-e97cc8f70cae",
+    "name": "PAK'nSAVE Highland Park"
+  }
+}

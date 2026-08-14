@@ -32,6 +32,13 @@ def newworld_store_name(store_key, store):
     return f"New World {store_key.replace('_', ' ').title()}"
 
 
+def paknsave_store_name(store_key, store):
+    display_name = store.get("address") or store.get("name")
+    if display_name:
+        return display_name
+    return f"PAK'nSAVE {store_key.replace('_', ' ').title()}"
+
+
 def get_or_create_store(store_key, store):
     client = get_client()
 
@@ -67,6 +74,28 @@ def get_or_create_newworld_store(store_key, store):
 
     result = (
         client.table("newworld_stores")
+        .select("id")
+        .eq("store_key", store_key)
+        .execute()
+    )
+    return result.data[0]["id"]
+
+
+def get_or_create_paknsave_store(store_key, store):
+    """Upsert a PAK'nSAVE store into its retailer-specific store table."""
+    client = get_client()
+    retailer_store_id = store.get("storeId") or store.get("store_id") or store.get("id")
+    if not retailer_store_id:
+        raise ValueError(f"Missing PAK'nSAVE store ID for {store_key}")
+
+    client.table("paknsave_stores").upsert({
+        "store_key": store_key,
+        "retailer_store_id": str(retailer_store_id),
+        "address": paknsave_store_name(store_key, store),
+    }, on_conflict="store_key").execute()
+
+    result = (
+        client.table("paknsave_stores")
         .select("id")
         .eq("store_key", store_key)
         .execute()
@@ -116,6 +145,16 @@ def newworld_price_row(product, store_id):
         "store_id": store_id,
         "price": to_number(product.get("price")),
         "is_club_price": bool(product.get("is_club_price", False)),
+    }
+
+
+def paknsave_price_row(product, store_id):
+    """Store the effective PAK'nSAVE price and its promotion flag."""
+    return {
+        "product_id": str(product["product_id"]),
+        "store_id": store_id,
+        "price": to_number(product.get("price")),
+        "is_on_special": bool(product.get("is_on_special", False)),
     }
 
 
@@ -190,5 +229,40 @@ def upload_newworld_products(store_key, store, products):
     print(
         f"Upload complete: {len(unique)} New World products for "
         f"{newworld_store_name(store_key, store)}"
+    )
+    return len(unique)
+
+
+def upload_paknsave_products(store_key, store, products):
+    """Upload PAK'nSAVE data to its separate catalogue, price and store tables."""
+    client = get_client()
+    store_id = get_or_create_paknsave_store(store_key, store)
+    unique = {
+        str(product["product_id"]): product
+        for product in products
+        if product.get("product_id")
+    }
+
+    upsert_chunked(
+        client,
+        "paknsave_products",
+        [catalog_row(product) for product in unique.values()],
+        on_conflict="product_id",
+        label="PAK'nSAVE products",
+    )
+    upsert_chunked(
+        client,
+        "paknsave_store_prices",
+        [paknsave_price_row(product, store_id) for product in unique.values()],
+        on_conflict="product_id,store_id",
+        label="PAK'nSAVE prices",
+    )
+    client.table("paknsave_stores").update({
+        "scraped_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("id", store_id).execute()
+
+    print(
+        f"Upload complete: {len(unique)} PAK'nSAVE products for "
+        f"{paknsave_store_name(store_key, store)}"
     )
     return len(unique)
