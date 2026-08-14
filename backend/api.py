@@ -36,12 +36,15 @@ def public_search_row(row, retailer):
         # The prefix only tells the detail endpoint which table to query. The
         # ID stored in newworld_products remains the unmodified retailer ID.
         row["product_id"] = f"new_world:{row['product_id']}"
+    elif retailer == "PAK'nSAVE":
+        row["product_id"] = f"paknsave:{row['product_id']}"
     return {
         **row,
         "store": retailer,
         "original_price": optional_price(row.get("original_price")),
         "sale_price": optional_price(row.get("sale_price")),
         "is_club_price": bool(row.get("is_club_price", False)),
+        "is_on_special": bool(row.get("is_on_special", False)),
     }
 
 
@@ -73,9 +76,11 @@ def search():
     # small, already-ranked result sets here keeps their schemas independent.
     woolworths = client.rpc("search_products", rpc_args).execute().data
     new_world = client.rpc("search_newworld_products", rpc_args).execute().data
+    paknsave = client.rpc("search_paknsave_products", rpc_args).execute().data
     products = [
         *(public_search_row(row, "Woolworths") for row in woolworths),
         *(public_search_row(row, "New World") for row in new_world),
+        *(public_search_row(row, "PAK'nSAVE") for row in paknsave),
     ]
     products.sort(key=lambda row: combined_result_sort_key(row, stems))
 
@@ -86,22 +91,33 @@ def search():
 def product_prices(product_id):
     """Every store's price for one product, cheapest first. Backs the
     per-store comparison dropdown on the product cards."""
-    is_new_world = product_id.startswith("new_world:")
-    retailer = "New World" if is_new_world else "Woolworths"
-    database_product_id = (
-        product_id.split(":", 1)[1] if is_new_world else product_id
-    )
-    price_table = (
-        "newworld_store_prices" if is_new_world else "woolies_store_prices"
-    )
-    store_relation = "newworld_stores" if is_new_world else "woolies_stores"
-    price_columns = (
-        "price, is_club_price, "
-        f"{store_relation}(store_key, address)"
-        if is_new_world else
-        "price, original_price, sale_price, unit_price, "
-        "woolies_stores(store_key, address)"
-    )
+    if product_id.startswith("new_world:"):
+        retailer = "New World"
+        database_product_id = product_id.split(":", 1)[1]
+        price_table = "newworld_store_prices"
+        store_relation = "newworld_stores"
+        price_columns = (
+            "price, is_club_price, "
+            "newworld_stores(store_key, address)"
+        )
+    elif product_id.startswith("paknsave:"):
+        retailer = "PAK'nSAVE"
+        database_product_id = product_id.split(":", 1)[1]
+        price_table = "paknsave_store_prices"
+        store_relation = "paknsave_stores"
+        price_columns = (
+            "price, is_on_special, "
+            "paknsave_stores(store_key, address)"
+        )
+    else:
+        retailer = "Woolworths"
+        database_product_id = product_id
+        price_table = "woolies_store_prices"
+        store_relation = "woolies_stores"
+        price_columns = (
+            "price, original_price, sale_price, unit_price, "
+            "woolies_stores(store_key, address)"
+        )
 
     result = (
         get_client()
@@ -125,6 +141,7 @@ def product_prices(product_id):
             "sale_price": optional_price(row.get("sale_price")),
             "unit_price": row.get("unit_price"),
             "is_club_price": bool(row.get("is_club_price", False)),
+            "is_on_special": bool(row.get("is_on_special", False)),
         })
     return jsonify(prices)
 

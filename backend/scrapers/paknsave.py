@@ -616,7 +616,12 @@ def parse_args():
     parser.add_argument(
         "--no-json",
         action="store_true",
-        help="do not write product JSON files",
+        help="do not write product JSON files (use with --upload for upload-only runs)",
+    )
+    parser.add_argument(
+        "--upload",
+        action="store_true",
+        help="upload scraped products to the PAK'nSAVE Supabase tables",
     )
     parser.add_argument(
         "--discover-only",
@@ -656,6 +661,12 @@ def main():
             print(json.dumps({store_key: departments}, indent=2, ensure_ascii=False))
         return
 
+    if args.upload:
+        try:
+            from .db import upload_paknsave_products
+        except ImportError:
+            from db import upload_paknsave_products
+
     completed = {}
     failed = []
     for position, store_key in enumerate(store_keys, 1):
@@ -689,6 +700,9 @@ def main():
                     encoding="utf-8",
                 )
                 print(f"Saved {len(products)} products to {output}")
+            if args.upload:
+                store = {**stores[store_key], "store_key": store_key}
+                upload_paknsave_products(store_key, store, products)
             completed[store_key] = len(products)
         except Exception as exc:
             if not scrape_all:

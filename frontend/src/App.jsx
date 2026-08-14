@@ -33,7 +33,11 @@ const PriceBlock = ({ item, compact }) => (
     </span>
     <div
       className={`flex items-baseline justify-end gap-1 font-black tracking-tight ${
-        item.sale_price != null ? "text-blue-600" : "text-gray-900"
+        item.sale_price != null
+          ? "text-blue-600"
+          : item.is_on_special
+            ? "text-yellow-600"
+            : "text-gray-900"
       }`}
     >
       <strong className={compact ? "text-base sm:text-xl" : "text-lg sm:text-2xl"}>
@@ -54,6 +58,11 @@ const PriceBlock = ({ item, compact }) => (
     {item.is_club_price && (
       <span className="text-[10px] sm:text-xs font-black uppercase text-red-600">
         Clubcard price
+      </span>
+    )}
+    {item.is_on_special && (
+      <span className="text-[10px] sm:text-xs font-black uppercase text-yellow-700">
+        Special
       </span>
     )}
   </div>
