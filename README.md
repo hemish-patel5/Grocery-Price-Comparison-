@@ -32,3 +32,15 @@ Run the SQL files in the Supabase SQL editor in this order:
 The final migration enables PostgreSQL full-text and trigram search, creates
 the search indexes, normalizes retailer departments into shared categories,
 and installs the `search_grocery_products` RPC used by `backend/api.py`.
+
+## Scraping and uploading
+
+After adding `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` to `backend/.env`, run:
+
+```bash
+python -m backend.scrapers.db
+```
+
+This runs Woolworths Central/West Auckland, every Auckland New World, and every
+Auckland PAK'nSAVE scraper sequentially. Products are uploaded directly to
+their retailer-specific Supabase tables without generating product JSON files.

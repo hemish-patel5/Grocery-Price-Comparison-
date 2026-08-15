@@ -1,4 +1,6 @@
 import os
+import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -8,6 +10,22 @@ from supabase import create_client
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 UPLOAD_CHUNK_SIZE = 500
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+SCRAPER_COMMANDS = (
+    (
+        "Woolworths Central and West Auckland",
+        ("-m", "backend.scrapers.woolies"),
+    ),
+    (
+        "New World Auckland",
+        ("-m", "backend.scrapers.newworld", "--upload", "--no-json"),
+    ),
+    (
+        "PAK'nSAVE Auckland",
+        ("-m", "backend.scrapers.paknsave", "--upload", "--no-json"),
+    ),
+)
 
 _client = None
 
@@ -266,3 +284,73 @@ def upload_paknsave_products(store_key, store, products):
         f"{paknsave_store_name(store_key, store)}"
     )
     return len(unique)
+
+
+def validate_supabase_connection():
+    """Fail before scraping if credentials or the database are unavailable."""
+    missing = [
+        name
+        for name in ("SUPABASE_URL", "SUPABASE_SERVICE_KEY")
+        if not os.environ.get(name)
+    ]
+    if missing:
+        raise RuntimeError(
+            f"Missing {', '.join(missing)} in backend/.env"
+        )
+
+    try:
+        (
+            get_client()
+            .table("woolies_stores")
+            .select("id")
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:
+        raise RuntimeError(
+            "Could not connect to the configured Supabase database"
+        ) from exc
+
+
+def run_all_scrapers():
+    """Scrape every configured retailer store and upload without JSON output."""
+    validate_supabase_connection()
+    failed = []
+
+    print(
+        "Starting all grocery scrapers. Products will be uploaded directly "
+        "to Supabase.",
+        flush=True,
+    )
+    for position, (label, arguments) in enumerate(SCRAPER_COMMANDS, 1):
+        print(
+            f"\n===== RETAILER [{position}/{len(SCRAPER_COMMANDS)}]: "
+            f"{label} =====",
+            flush=True,
+        )
+        result = subprocess.run(
+            (sys.executable, *arguments),
+            cwd=PROJECT_ROOT,
+            check=False,
+        )
+        if result.returncode:
+            failed.append(label)
+            print(
+                f"{label} exited with status {result.returncode}; "
+                "continuing to the next retailer.",
+                flush=True,
+            )
+
+    if failed:
+        raise RuntimeError(
+            "Scraper run finished with failures: " + ", ".join(failed)
+        )
+
+    print("\nAll retailer scrapers completed successfully.", flush=True)
+
+
+if __name__ == "__main__":
+    try:
+        run_all_scrapers()
+    except RuntimeError as exc:
+        raise SystemExit(str(exc)) from exc
