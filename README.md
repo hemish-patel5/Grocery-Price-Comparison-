@@ -20,3 +20,15 @@ A full-stack web application designed to help New Zealand shoppers compare real-
 
 ---
 
+## Database setup
+
+Run the SQL files in the Supabase SQL editor in this order:
+
+1. `backend/sql/woolworths_tables.sql`
+2. `backend/sql/newworld_tables.sql`
+3. `backend/sql/paknsave_tables.sql`
+4. `backend/sql/search_engine.sql`
+
+The final migration enables PostgreSQL full-text and trigram search, creates
+the search indexes, normalizes retailer departments into shared categories,
+and installs the `search_grocery_products` RPC used by `backend/api.py`.

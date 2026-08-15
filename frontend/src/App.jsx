@@ -1,6 +1,29 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+
+const DEFAULT_CATEGORIES = [
+  { value: "fruit_vegetables", label: "Fruit & Vegetables" },
+  { value: "meat_seafood", label: "Meat, Poultry & Seafood" },
+  { value: "dairy_deli", label: "Dairy, Deli & Eggs" },
+  { value: "pantry", label: "Pantry" },
+  { value: "bakery", label: "Bakery" },
+  { value: "drinks", label: "Drinks" },
+  { value: "frozen", label: "Frozen" },
+  { value: "snacks_ready_meals", label: "Snacks & Easy Meals" },
+  { value: "household", label: "Household & Cleaning" },
+  { value: "health_body", label: "Health & Body" },
+  { value: "baby", label: "Baby & Toddler" },
+  { value: "pets", label: "Pets" },
+  { value: "beer_wine", label: "Beer, Wine & Cider" },
+  { value: "featured", label: "Featured & Deals" },
+];
+
+const DEFAULT_SORTS = [
+  { value: "relevance", label: "Relevance" },
+  { value: "price_asc", label: "Lowest price" },
+  { value: "price_desc", label: "Highest price" },
+];
 
 const storeColor = (store) => {
   if (store === "PAK'nSAVE") return "text-black bg-yellow-300";
@@ -93,28 +116,77 @@ const ProductInfo = ({ item }) => (
 
 const App = () => {
   const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("");
+  const [sortOrder, setSortOrder] = useState("relevance");
+  const [location, setLocation] = useState("");
   const [products, setProducts] = useState([]);
   const [hasSearched, setHasSearched] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [searchError, setSearchError] = useState("");
   const [expanded, setExpanded] = useState({});
   const [storePrices, setStorePrices] = useState({});
+  const [searchOptions, setSearchOptions] = useState({
+    categories: DEFAULT_CATEGORIES,
+    sorts: DEFAULT_SORTS,
+    locations: [],
+  });
 
-  const handleSearch = async () => {
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadSearchOptions = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/search/options`);
+        if (!response.ok) throw new Error("Could not load search filters");
+        const data = await response.json();
+        if (!cancelled) {
+          setSearchOptions({
+            categories: data.categories?.length ? data.categories : DEFAULT_CATEGORIES,
+            sorts: data.sorts?.length ? data.sorts : DEFAULT_SORTS,
+            locations: Array.isArray(data.locations) ? data.locations : [],
+          });
+        }
+      } catch (error) {
+        console.error("Search filters failed", error);
+      }
+    };
+
+    loadSearchOptions();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleSearch = async (event) => {
+    event?.preventDefault();
     try {
       setHasSearched(true);
       setIsLoading(true);
+      setSearchError("");
       setExpanded({});
       setStorePrices({});
       setProducts([]);
-      const res = await fetch(`${API_BASE_URL}/api/search?q=${encodeURIComponent(query)}`);
+
+      const parameters = new URLSearchParams({ q: query, sort: sortOrder });
+      if (category) parameters.set("category", category);
+      if (location) parameters.set("location", location);
+
+      const res = await fetch(`${API_BASE_URL}/api/search?${parameters}`);
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Search failed");
       setProducts(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Search failed", error);
+      setSearchError(error.message || "Search failed. Please try again.");
     } finally {
       setIsLoading(false);
     }
   };
+
+  const locationsByRetailer = searchOptions.locations.reduce((groups, option) => {
+    const retailer = option.retailer || "Stores";
+    return { ...groups, [retailer]: [...(groups[retailer] || []), option] };
+  }, {});
 
   const toggleStores = async (productId) => {
     setExpanded((prev) => ({ ...prev, [productId]: !prev[productId] }));
@@ -139,39 +211,90 @@ const App = () => {
         Grocerybook
       </h1>
 
-      {/* --- ROUNDED SEARCH BAR CONTAINER --- */}
-      <div className="relative w-full max-w-xl group">
-        <input
-          type="search"
-          placeholder="Search for a product..."
-          className="w-full py-4 pl-6 pr-16 text-base sm:py-6 sm:pl-8 sm:pr-20 sm:text-xl rounded-full border-2 border-white bg-white focus:outline-none focus:border-blue-400 focus:ring-blue-100 transition-all placeholder:text-gray-400"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-        />
+      <form onSubmit={handleSearch} className="w-full max-w-3xl">
+        {/* --- ROUNDED SEARCH BAR CONTAINER --- */}
+        <div className="relative w-full max-w-xl mx-auto group">
+          <input
+            type="search"
+            placeholder="Search for a product..."
+            aria-label="Product name"
+            className="w-full py-4 pl-6 pr-16 text-base sm:py-6 sm:pl-8 sm:pr-20 sm:text-xl rounded-full border-2 border-white bg-white focus:outline-none focus:border-blue-400 focus:ring-blue-100 transition-all placeholder:text-gray-400"
+            value={query}
+            maxLength={100}
+            onChange={(e) => setQuery(e.target.value)}
+          />
 
-        {/* --- MAGNIFYING GLASS BUTTON --- */}
-        <button
-          onClick={handleSearch}
-          aria-label="Search"
-          className="absolute right-2 sm:right-3 top-1/2 -translate-y-1/2 p-3 sm:p-4 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors shadow-lg active:scale-95"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-5 w-5 sm:h-6 sm:w-6"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
+          {/* --- MAGNIFYING GLASS BUTTON --- */}
+          <button
+            type="submit"
+            aria-label="Search"
+            disabled={isLoading}
+            className="absolute right-2 sm:right-3 top-1/2 -translate-y-1/2 p-3 sm:p-4 bg-blue-600 text-white rounded-full hover:bg-blue-700 disabled:bg-blue-300 transition-colors shadow-lg active:scale-95"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={3}
-              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-            />
-          </svg>
-        </button>
-      </div>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-5 w-5 sm:h-6 sm:w-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={3}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            </svg>
+          </button>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-gray-500">
+            Category
+            <select
+              value={category}
+              onChange={(event) => setCategory(event.target.value)}
+              className="w-full rounded-xl border border-white bg-white px-3 py-3 text-sm font-semibold normal-case tracking-normal text-gray-800 shadow-sm outline-none focus:border-blue-400"
+            >
+              <option value="">All categories</option>
+              {searchOptions.categories.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-gray-500">
+            Sort by
+            <select
+              value={sortOrder}
+              onChange={(event) => setSortOrder(event.target.value)}
+              className="w-full rounded-xl border border-white bg-white px-3 py-3 text-sm font-semibold normal-case tracking-normal text-gray-800 shadow-sm outline-none focus:border-blue-400"
+            >
+              {searchOptions.sorts.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-gray-500">
+            Location
+            <select
+              value={location}
+              onChange={(event) => setLocation(event.target.value)}
+              className="w-full rounded-xl border border-white bg-white px-3 py-3 text-sm font-semibold normal-case tracking-normal text-gray-800 shadow-sm outline-none focus:border-blue-400"
+            >
+              <option value="">All Auckland stores</option>
+              {Object.entries(locationsByRetailer).map(([retailer, options]) => (
+                <optgroup key={retailer} label={retailer}>
+                  {options.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </label>
+        </div>
+      </form>
 
       {/* --- RESULTS SECTION --- */}
       <div className="w-full max-w-3xl mt-8 sm:mt-12">
@@ -180,8 +303,16 @@ const App = () => {
             Loading...
           </p>
         )}
-        {hasSearched && !isLoading && products.length === 0 && (
+        {searchError && !isLoading && (
+          <p className="text-center text-red-600 font-semibold">{searchError}</p>
+        )}
+        {hasSearched && !isLoading && !searchError && products.length === 0 && (
           <p className="text-center text-gray-500 font-semibold">No products found.</p>
+        )}
+        {hasSearched && !isLoading && products.length > 0 && (
+          <p className="mb-3 text-sm font-semibold text-gray-500">
+            Showing {products.length} products
+          </p>
         )}
 
         <ul className="grid gap-3 sm:gap-4 w-full">

@@ -9,25 +9,46 @@ app = Flask(__name__)
 CORS(app)
 
 SEARCH_RESULT_LIMIT = 100
+SEARCH_QUERY_MAX_LENGTH = 100
+SEARCH_TERM_LIMIT = 8
+
+SEARCH_CATEGORIES = (
+    ("fruit_vegetables", "Fruit & Vegetables"),
+    ("meat_seafood", "Meat, Poultry & Seafood"),
+    ("dairy_deli", "Dairy, Deli & Eggs"),
+    ("pantry", "Pantry"),
+    ("bakery", "Bakery"),
+    ("drinks", "Drinks"),
+    ("frozen", "Frozen"),
+    ("snacks_ready_meals", "Snacks & Easy Meals"),
+    ("household", "Household & Cleaning"),
+    ("health_body", "Health & Body"),
+    ("baby", "Baby & Toddler"),
+    ("pets", "Pets"),
+    ("beer_wine", "Beer, Wine & Cider"),
+    ("featured", "Featured & Deals"),
+)
+SEARCH_CATEGORY_KEYS = {value for value, _ in SEARCH_CATEGORIES}
+
+SEARCH_SORTS = (
+    ("relevance", "Relevance"),
+    ("price_asc", "Lowest price"),
+    ("price_desc", "Highest price"),
+)
+SEARCH_SORT_KEYS = {value for value, _ in SEARCH_SORTS}
+
+SEARCH_LOCATION_TABLES = (
+    ("woolworths", "Woolworths", "woolies_stores"),
+    ("new_world", "New World", "newworld_stores"),
+    ("paknsave", "PAK'nSAVE", "paknsave_stores"),
+)
+SEARCH_LOCATION_RETAILERS = {
+    value: retailer for value, retailer, _ in SEARCH_LOCATION_TABLES
+}
 
 
 def optional_price(value):
     return f"{value:.2f}" if value is not None else None
-
-
-def words(value):
-    found = set(re.findall(r"[a-z0-9&']+", (value or "").lower()))
-    return found | {word[:-1] for word in found if len(word) > 3 and word.endswith("s")}
-
-
-def combined_result_sort_key(row, stems):
-    name_words = words(f"{row.get('name') or ''} {row.get('brand') or ''}")
-    aisle_words = words(row.get("aisle"))
-    name_hit = any(stem in name_words for stem in stems)
-    aisle_hit = any(stem in aisle_words for stem in stems)
-    relevance = 0 if name_hit and aisle_hit else 1 if name_hit else 2 if aisle_hit else 3
-    price = row.get("price")
-    return relevance, price is None, price if price is not None else float("inf")
 
 
 def public_search_row(row, retailer):
@@ -48,43 +69,125 @@ def public_search_row(row, retailer):
     }
 
 
+def search_error(message, status=400):
+    return jsonify({"error": message}), status
+
+
+def normalized_search_query(query):
+    terms = re.findall(r"[a-z0-9&']+", query.lower())
+    return " ".join(dict.fromkeys(terms[:SEARCH_TERM_LIMIT]))
+
+
+def parse_search_location(value):
+    if not value:
+        return None, None
+
+    retailer_key, separator, store_key = value.partition(":")
+    retailer = SEARCH_LOCATION_RETAILERS.get(retailer_key)
+    if (
+        not separator
+        or retailer is None
+        or not re.fullmatch(r"[a-z0-9_]{1,64}", store_key)
+    ):
+        raise ValueError("Unknown location")
+    return retailer, store_key
+
+
 @app.route("/healthz")
 def healthz():
     return jsonify({"status": "ok"})
 
 
+@app.route("/api/search/options")
+def search_options():
+    """Return filter choices backed by stores that exist in Supabase."""
+    client = get_client()
+    locations = []
+    for retailer_key, retailer, table in SEARCH_LOCATION_TABLES:
+        try:
+            rows = (
+                client.table(table)
+                .select("store_key,address")
+                .order("address")
+                .execute()
+                .data
+            )
+        except Exception:
+            app.logger.exception("Could not load search locations from %s", table)
+            continue
+
+        locations.extend({
+            "value": f"{retailer_key}:{row['store_key']}",
+            "label": row.get("address") or row["store_key"],
+            "retailer": retailer,
+        } for row in rows)
+
+    return jsonify({
+        "categories": [
+            {"value": value, "label": label}
+            for value, label in SEARCH_CATEGORIES
+        ],
+        "sorts": [
+            {"value": value, "label": label}
+            for value, label in SEARCH_SORTS
+        ],
+        "locations": locations,
+    })
+
+
 @app.route("/api/search")
 def search():
     query = request.args.get("q", "").strip()
+    category = request.args.get("category", "").strip() or None
+    sort_order = request.args.get("sort", "relevance").strip()
+    location = request.args.get("location", "").strip()
 
-    # split into words so 'free range eggs' matches names with the words in
-    # any order; strip a trailing 's' so 'eggs' also matches 'egg'
-    terms = re.findall(r"[a-z0-9&']+", query.lower())
-    stems = list(dict.fromkeys(
-        t[:-1] if len(t) > 3 and t.endswith("s") else t for t in terms
-    ))
-    if not stems:
+    if len(query) > SEARCH_QUERY_MAX_LENGTH:
+        return search_error(
+            f"Search query must be {SEARCH_QUERY_MAX_LENGTH} characters or fewer"
+        )
+    if category is not None and category not in SEARCH_CATEGORY_KEYS:
+        return search_error("Unknown category")
+    if sort_order not in SEARCH_SORT_KEYS:
+        return search_error("Unknown sort order")
+    try:
+        retailer, store_key = parse_search_location(location)
+    except ValueError as exc:
+        return search_error(str(exc))
+
+    normalized_query = normalized_search_query(query)
+    if not normalized_query and category is None and store_key is None:
         return jsonify([])
 
     rpc_args = {
-        "p_stems": stems,
+        "p_query": normalized_query,
+        "p_category": category,
+        "p_retailer": retailer,
+        "p_store_key": store_key,
+        "p_sort": sort_order,
         "p_limit": SEARCH_RESULT_LIMIT,
+        "p_offset": 0,
     }
-    client = get_client()
+    try:
+        rows = (
+            get_client()
+            .rpc("search_grocery_products", rpc_args)
+            .execute()
+            .data
+        )
+    except Exception:
+        app.logger.exception("Grocery search RPC failed")
+        return search_error("Search is temporarily unavailable", status=503)
 
-    # Each retailer is searched in its own tables. Combining and sorting the
-    # small, already-ranked result sets here keeps their schemas independent.
-    woolworths = client.rpc("search_products", rpc_args).execute().data
-    new_world = client.rpc("search_newworld_products", rpc_args).execute().data
-    paknsave = client.rpc("search_paknsave_products", rpc_args).execute().data
     products = [
-        *(public_search_row(row, "Woolworths") for row in woolworths),
-        *(public_search_row(row, "New World") for row in new_world),
-        *(public_search_row(row, "PAK'nSAVE") for row in paknsave),
+        public_search_row(row, row.get("retailer"))
+        for row in (rows or [])
     ]
-    products.sort(key=lambda row: combined_result_sort_key(row, stems))
-
-    return jsonify(products[:SEARCH_RESULT_LIMIT])
+    response = jsonify(products)
+    response.headers["X-Total-Count"] = str(
+        rows[0].get("total_count", len(rows)) if rows else 0
+    )
+    return response
 
 
 @app.route("/api/product/<product_id>/prices")
