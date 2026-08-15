@@ -34,21 +34,6 @@ PROMO_AISLES = {"fresh deals", "in season", "the odd bunch", "new"}
 # Every Woolworths store in the Auckland region taken from JSON file
 WOOLWORTHS_STORES = json.loads(stores_path.read_text(encoding="utf-8"))
 
-# The stores this scraper runs over: Auckland (West)
-WOOLWORTHS_AUCKLAND_WEST_STORES = [
-    # "helensville",
-    # "henderson",
-    # "hobsonville",
-    # "kelston",
-    # "lincoln_road",
-    # "pt_chevalier",
-    # "te_atatu_south",
-    # "lynnmall",
-    "lynfield",
-    "northwest",
-    "westgate",
-]
-
 # Used if the department list can't be fetched from the shell API.
 WOOLWORTHS_DEPARTMENTS_FALLBACK = [
     ("fruit-veg", "Fruit & Veg"),
@@ -432,15 +417,21 @@ if __name__ == "__main__":
     started = time.time()
     uploaded_counts = {}
     failed_stores = []
+    store_keys = list(WOOLWORTHS_STORES)
+    if not store_keys:
+        raise RuntimeError("No Auckland Woolworths stores found")
 
     aisle_map = load_or_build_aisle_map(
-        WOOLWORTHS_STORES[WOOLWORTHS_AUCKLAND_WEST_STORES[0]]
+        WOOLWORTHS_STORES[store_keys[0]]
     )
 
-    for position, store_key in enumerate(WOOLWORTHS_AUCKLAND_WEST_STORES, 1):
+    for position, store_key in enumerate(store_keys, 1):
         try:
             store = WOOLWORTHS_STORES[store_key]
-            print(f"\n===== [{position}/{len(WOOLWORTHS_AUCKLAND_WEST_STORES)}] {store['address']} ({store_key}) =====")
+            print(
+                f"\n===== [{position}/{len(store_keys)}] "
+                f"{store['address']} ({store_key}) ====="
+            )
 
             products = scrape_store(store_key, aisle_map)
             if not products:
@@ -455,7 +446,7 @@ if __name__ == "__main__":
     elapsed_minutes = (time.time() - started) / 60
     print(
         f"\nFinished in {elapsed_minutes:.1f} min: "
-        f"{len(uploaded_counts)}/{len(WOOLWORTHS_AUCKLAND_WEST_STORES)} stores uploaded, "
+        f"{len(uploaded_counts)}/{len(store_keys)} stores uploaded, "
         f"{sum(uploaded_counts.values())} products total"
     )
     if failed_stores:

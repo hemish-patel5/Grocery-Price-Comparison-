@@ -584,24 +584,7 @@ def search_newworld(query, store):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Scrape every New World category for one or all stores",
-    )
-    parser.add_argument(
-        "--store",
-        help=(
-            "scrape only this store key from newworld_auckland_stores.json; "
-            "omit to scrape every store"
-        ),
-    )
-    parser.add_argument(
-        "--stores",
-        nargs="+",
-        help="scrape only these store keys from newworld_auckland_stores.json",
-    )
-    parser.add_argument(
-        "--all-stores",
-        action="store_true",
-        help="scrape every store (this is also the default when --store is omitted)",
+        description="Scrape every Auckland New World store",
     )
     parser.add_argument(
         "--department",
@@ -616,11 +599,6 @@ def parse_args():
         ),
     )
     parser.add_argument(
-        "--output",
-        type=Path,
-        help="JSON output path (defaults to backend/data/newworld_<store>.json)",
-    )
-    parser.add_argument(
         "--no-json",
         action="store_true",
         help="do not write product JSON files (use with --upload for upload-only runs)",
@@ -633,7 +611,7 @@ def parse_args():
     parser.add_argument(
         "--upload",
         action="store_true",
-        help="upload the scraped products to Supabase after saving the JSON",
+        help="upload the scraped products to Supabase",
     )
     return parser.parse_args()
 
@@ -641,32 +619,9 @@ def parse_args():
 def main():
     args = parse_args()
     stores = load_newworld_stores()
-    if args.store and args.stores:
-        raise SystemExit("Use either --store or --stores, not both")
-    if args.all_stores and (args.store or args.stores):
-        raise SystemExit("--all-stores cannot be combined with --store or --stores")
-    if args.no_json and args.output:
-        raise SystemExit("--no-json cannot be combined with --output")
-
-    selected_store_keys = args.stores or ([args.store] if args.store else None)
-    scrape_all_stores = args.all_stores or selected_store_keys is None
-
-    unknown_stores = [
-        store_key
-        for store_key in (selected_store_keys or [])
-        if store_key not in stores
-    ]
-    if unknown_stores:
-        raise SystemExit(
-            f"Unknown store(s) {', '.join(unknown_stores)}; "
-            f"available: {', '.join(stores) or 'none'}"
-        )
-    if scrape_all_stores and args.output:
-        raise SystemExit("--output can only be used with one --store")
-    if selected_store_keys and len(selected_store_keys) > 1 and args.output:
-        raise SystemExit("--output can only be used with one selected store")
-
-    store_keys = list(stores) if scrape_all_stores else selected_store_keys
+    store_keys = list(stores)
+    if not store_keys:
+        raise RuntimeError("No Auckland New World stores found")
 
     if args.discover_only:
         for store_key in store_keys:
@@ -705,7 +660,7 @@ def main():
                 raise RuntimeError("scrape returned no products")
 
             if not args.no_json:
-                output = args.output or (
+                output = (
                     Path(__file__).resolve().parent.parent
                     / "data"
                     / f"newworld_{store_key}_products.json"
@@ -721,8 +676,6 @@ def main():
                 upload_newworld_products(store_key, store, products)
             completed[store_key] = len(products)
         except Exception as exc:
-            if not scrape_all_stores:
-                raise
             print(f"STORE FAILED, moving on: {store_key}: {exc}")
             failed.append(store_key)
 

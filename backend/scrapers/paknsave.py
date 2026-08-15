@@ -572,21 +572,7 @@ def search_paknsave(query, store):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Scrape every PAK'nSAVE category for one or all stores",
-    )
-    parser.add_argument(
-        "--store",
-        help="scrape one key from paknsave_auckland_stores.json",
-    )
-    parser.add_argument(
-        "--stores",
-        nargs="+",
-        help="scrape selected keys from paknsave_auckland_stores.json",
-    )
-    parser.add_argument(
-        "--all-stores",
-        action="store_true",
-        help="scrape every Auckland store (also the default with no store option)",
+        description="Scrape every Auckland PAK'nSAVE store",
     )
     parser.add_argument(
         "--department",
@@ -599,11 +585,6 @@ def parse_args():
             f"fetch a sample of 1-{PAKNSAVE_HITS_PER_PAGE} products instead "
             "of crawling every category"
         ),
-    )
-    parser.add_argument(
-        "--output",
-        type=Path,
-        help="JSON path; only valid when one store is selected",
     )
     parser.add_argument(
         "--no-json",
@@ -626,25 +607,9 @@ def parse_args():
 def main():
     args = parse_args()
     stores = load_paknsave_stores()
-    if args.store and args.stores:
-        raise SystemExit("Use either --store or --stores, not both")
-    if args.all_stores and (args.store or args.stores):
-        raise SystemExit("--all-stores cannot be combined with --store or --stores")
-    if args.no_json and args.output:
-        raise SystemExit("--no-json cannot be combined with --output")
-
-    selected = args.stores or ([args.store] if args.store else None)
-    scrape_all = args.all_stores or selected is None
-    unknown = [key for key in (selected or []) if key not in stores]
-    if unknown:
-        raise SystemExit(
-            f"Unknown store(s): {', '.join(unknown)}; "
-            f"available: {', '.join(stores)}"
-        )
-    if args.output and (scrape_all or len(selected) != 1):
-        raise SystemExit("--output can only be used with one selected store")
-
-    store_keys = list(stores) if scrape_all else selected
+    store_keys = list(stores)
+    if not store_keys:
+        raise RuntimeError("No Auckland PAK'nSAVE stores found")
     if args.discover_only:
         for store_key in store_keys:
             store = {**stores[store_key], "store_key": store_key}
@@ -681,7 +646,7 @@ def main():
                 raise RuntimeError("scrape returned no products")
 
             if not args.no_json:
-                output = args.output or (
+                output = (
                     Path(__file__).resolve().parent.parent
                     / "data"
                     / f"paknsave_{store_key}_products.json"
@@ -697,8 +662,6 @@ def main():
                 upload_paknsave_products(store_key, store, products)
             completed[store_key] = len(products)
         except Exception as exc:
-            if not scrape_all:
-                raise
             print(f"STORE FAILED, moving on: {store_key}: {exc}")
             failed.append(store_key)
 
