@@ -34,6 +34,37 @@ PROMO_AISLES = {"fresh deals", "in season", "the odd bunch", "new"}
 # Every Woolworths store in the Auckland region taken from JSON file
 WOOLWORTHS_STORES = json.loads(stores_path.read_text(encoding="utf-8"))
 
+# The Central and West regional groups represented in the Auckland store file.
+WOOLWORTHS_CENTRAL_AND_WEST_STORES = (
+    # Central Auckland
+    "quay_street",
+    "victoria_street_west",
+    "greenlane",
+    "grey_lynn",
+    "mt_eden",
+    "mt_roskill",
+    "mt_wellington",
+    "newmarket",
+    "onehunga",
+    "ponsonby",
+    "st_johns",
+    "st_lukes",
+    "three_kings",
+    "waiheke",
+    # West Auckland
+    "helensville",
+    "henderson",
+    "hobsonville",
+    "kelston",
+    "lincoln_road",
+    "lynfield",
+    "lynnmall",
+    "northwest",
+    "pt_chevalier",
+    "te_atatu_south",
+    "westgate",
+)
+
 # Used if the department list can't be fetched from the shell API.
 WOOLWORTHS_DEPARTMENTS_FALLBACK = [
     ("fruit-veg", "Fruit & Veg"),
@@ -417,9 +448,16 @@ if __name__ == "__main__":
     started = time.time()
     uploaded_counts = {}
     failed_stores = []
-    store_keys = list(WOOLWORTHS_STORES)
-    if not store_keys:
-        raise RuntimeError("No Auckland Woolworths stores found")
+    store_keys = list(WOOLWORTHS_CENTRAL_AND_WEST_STORES)
+    missing_store_keys = [
+        store_key for store_key in store_keys
+        if store_key not in WOOLWORTHS_STORES
+    ]
+    if missing_store_keys:
+        raise RuntimeError(
+            "Missing Woolworths store metadata for: "
+            + ", ".join(missing_store_keys)
+        )
 
     aisle_map = load_or_build_aisle_map(
         WOOLWORTHS_STORES[store_keys[0]]
