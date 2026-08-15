@@ -218,6 +218,7 @@ as $$
         select
             catalog.*,
             lower(coalesce(name, '')) as name_text,
+            lower(coalesce(aisle, '')) as aisle_text,
             lower(coalesce(name, '') || ' ' || coalesce(brand, ''))
                 as name_brand_text,
             to_tsvector(
@@ -254,9 +255,14 @@ as $$
                 else (
                     case
                         when name_text = params.query_text then 500
-                        when name_text like params.query_text || '%' then 350
                         when name_text like '%' || params.query_text || '%'
-                            then 250
+                            then 300
+                        else 0
+                    end
+                    + case
+                        when aisle_text = params.query_text then 220
+                        when aisle_text like '%' || params.query_text || '%'
+                            then 160
                         else 0
                     end
                     + 180 * ts_rank_cd(
@@ -436,7 +442,11 @@ as $$
     final_rows as (
         select
             deduplicated.*,
-            count(*) over () as matched_count
+            count(*) over () as matched_count,
+            row_number() over (
+                partition by retailer
+                order by relevance_score desc, price, name, product_id
+            ) as retailer_result_rank
         from deduplicated
         where duplicate_rank = 1
     )
@@ -467,6 +477,11 @@ as $$
             then final_rows.price end asc nulls last,
         case when params.sort_order = 'price_desc'
             then final_rows.price end desc nulls last,
+        -- In an all-retailer relevance search, show five strong matches from
+        -- each retailer before moving to the next batch. This prevents one
+        -- retailer's product naming convention from filling the first page.
+        case when params.sort_order = 'relevance'
+            then floor((final_rows.retailer_result_rank - 1) / 5.0) end,
         case when params.sort_order = 'relevance'
             then final_rows.relevance_score end desc,
         final_rows.relevance_score desc,
