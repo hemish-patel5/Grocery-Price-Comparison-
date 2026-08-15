@@ -41,22 +41,10 @@ STORES_PATH = (
     / "newworld_auckland_stores.json"
 )
 
-# Used only if the Auckland store data file is missing or empty.
-DEFAULT_STORE_KEY = "birkenhead"
-DEFAULT_STORE = {
-    "id": "63190876-2bd4-4562-ae34-bb5caebab4f9",
-    "name": "New World Birkenhead",
-    "address": "180 Mokoia Road, Chatswood, Auckland, 0626",
-    "latitude": -36.811428,
-    "longitude": 174.711486,
-    "region": "NI",
-}
 
 
 def load_newworld_stores(path=STORES_PATH):
-    """Load store metadata, retaining the known store as a safe default."""
-    if not path.exists() or not path.read_text(encoding="utf-8").strip():
-        return {DEFAULT_STORE_KEY: DEFAULT_STORE}
+    """Load store metadata"""
 
     stores = json.loads(path.read_text(encoding="utf-8"))
     if isinstance(stores, list):
@@ -568,9 +556,8 @@ def scrape_newworld_sample(store_key, limit, stores=None, department_name=None):
     return products
 
 
-def search_newworld(query, store=None):
+def search_newworld(query, store):
     """Compatibility helper for query-based searches against one store."""
-    store = store or {**DEFAULT_STORE, "store_key": DEFAULT_STORE_KEY}
     filters = category_filters(store)
     category = {
         "department": None,

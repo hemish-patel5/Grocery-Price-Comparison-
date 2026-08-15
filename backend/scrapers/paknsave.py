@@ -42,19 +42,12 @@ STORES_PATH = (
     / "paknsave_auckland_stores.json"
 )
 
-DEFAULT_STORE_KEY = "manukau"
-DEFAULT_STORE = {
-    "storeId": "9cd8eb60-3222-4efc-bd7c-50e03e6a81a4",
-    "name": "PAK'nSAVE Manukau",
-    "address": "6 Cavendish Drive, Manukau City, Auckland, 2104",
-}
+
 
 
 def load_paknsave_stores(path=STORES_PATH):
-    """Load the minimal Auckland store metadata needed for API searches."""
-    if not path.exists() or not path.read_text(encoding="utf-8").strip():
-        return {DEFAULT_STORE_KEY: DEFAULT_STORE}
-
+    # Load the stores needed for scraping and data collection
+    
     stores = json.loads(path.read_text(encoding="utf-8"))
     if isinstance(stores, list):
         stores = {
@@ -555,9 +548,8 @@ def scrape_paknsave_sample(store_key, limit, stores=None, department_name=None):
     return products
 
 
-def search_paknsave(query, store=None):
+def search_paknsave(query, store):
     """Compatibility helper for on-demand searches against one store."""
-    store = store or {**DEFAULT_STORE, "store_key": DEFAULT_STORE_KEY}
     try:
         with paknsave_client() as client:
             body = fetch_search_page(
