@@ -1,4 +1,5 @@
 import re
+from collections import deque
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -45,6 +46,9 @@ SEARCH_LOCATION_TABLES = (
 SEARCH_LOCATION_RETAILERS = {
     value: retailer for value, retailer, _ in SEARCH_LOCATION_TABLES
 }
+SEARCH_RETAILER_ORDER = tuple(
+    retailer for _, retailer, _ in SEARCH_LOCATION_TABLES
+)
 
 
 def optional_price(value):
@@ -76,6 +80,26 @@ def search_error(message, status=400):
 def normalized_search_query(query):
     terms = re.findall(r"[a-z0-9&']+", query.lower())
     return " ".join(dict.fromkeys(terms[:SEARCH_TERM_LIMIT]))
+
+
+def interleave_retailer_rows(rows):
+    """Keep one retailer's naming conventions from filling result page one."""
+    buckets = {retailer: deque() for retailer in SEARCH_RETAILER_ORDER}
+    extra_retailers = []
+    for row in rows:
+        retailer = row.get("retailer")
+        if retailer not in buckets:
+            buckets[retailer] = deque()
+            extra_retailers.append(retailer)
+        buckets[retailer].append(row)
+
+    ordered_retailers = (*SEARCH_RETAILER_ORDER, *extra_retailers)
+    interleaved = []
+    while any(buckets[retailer] for retailer in ordered_retailers):
+        for retailer in ordered_retailers:
+            if buckets[retailer]:
+                interleaved.append(buckets[retailer].popleft())
+    return interleaved
 
 
 def parse_search_location(value):
@@ -178,6 +202,9 @@ def search():
     except Exception:
         app.logger.exception("Grocery search RPC failed")
         return search_error("Search is temporarily unavailable", status=503)
+
+    if sort_order == "relevance" and retailer is None:
+        rows = interleave_retailer_rows(rows or [])
 
     products = [
         public_search_row(row, row.get("retailer"))

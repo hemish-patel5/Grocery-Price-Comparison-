@@ -115,6 +115,66 @@ class SearchApiTests(unittest.TestCase):
         self.assertEqual(database.rpc_args["p_query"], "")
         self.assertEqual(database.rpc_args["p_category"], "meat_seafood")
 
+    def test_relevance_search_interleaves_retailers(self):
+        database = FakeSupabase(rpc_rows=[
+            {
+                "retailer": retailer,
+                "product_id": product_id,
+                "name": product_id,
+                "price": 1,
+            }
+            for retailer, product_id in (
+                ("Woolworths", "w1"),
+                ("Woolworths", "w2"),
+                ("Woolworths", "w3"),
+                ("New World", "n1"),
+                ("New World", "n2"),
+                ("PAK'nSAVE", "p1"),
+            )
+        ])
+
+        with patch("backend.api.get_client", return_value=database):
+            response = self.client.get("/api/search?q=milk")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [row["store"] for row in response.get_json()],
+            [
+                "Woolworths",
+                "New World",
+                "PAK'nSAVE",
+                "Woolworths",
+                "New World",
+                "Woolworths",
+            ],
+        )
+
+    def test_price_search_keeps_database_order(self):
+        database = FakeSupabase(rpc_rows=[
+            {
+                "retailer": retailer,
+                "product_id": product_id,
+                "name": product_id,
+                "price": price,
+            }
+            for retailer, product_id, price in (
+                ("Woolworths", "w1", 1),
+                ("Woolworths", "w2", 2),
+                ("New World", "n1", 3),
+            )
+        ])
+
+        with patch("backend.api.get_client", return_value=database):
+            response = self.client.get(
+                "/api/search",
+                query_string={"q": "milk", "sort": "price_asc"},
+            )
+
+        self.assertEqual(
+            [row["store"] for row in response.get_json()],
+            ["Woolworths", "Woolworths", "New World"],
+        )
+
     def test_invalid_filters_are_rejected(self):
         cases = (
             ({"category": "not-real"}, "Unknown category"),
